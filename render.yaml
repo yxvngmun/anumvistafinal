@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: anum-vista-backend
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "pip install -r Anum-Vista-backend/backend/requirements.txt"
+    startCommand: "cd Anum-Vista-backend && uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TURSO_DATABASE_URL
+        value: libsql://app-production-db-yxvngmun.aws-us-east-1.turso.io
+      - key: TURSO_AUTH_TOKEN
+        value: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTQxNTM4MTcsImlkIjoiMDFhMWJiZTYtOWEwMS03OGY1LTk4NzktODBkZTU1NGMxN2Y1Iiwia2lkIjoieVVIZW9rVnA2T3FIVzUzMmxlanNtRjZ2QklsN1Z4RldqcXNxdm1CWFVQOCIsInJpZCI6ImQ4Y2NjZmM1LTZmMmEtNDUzZC04ZjUxLWYxOWMxZjg2YTJiYSJ9.kP1mWJREZE1eGeS3S6rq6_bEliQD2pYIUNnhYfAVKeMH3bj6c-gy-SwCRSesvY_xBIyYanusxog_FDKrHdoIAg
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "*"
