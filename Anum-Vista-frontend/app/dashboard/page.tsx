@@ -194,9 +194,9 @@ export default function DashboardPage() {
               <p className="text-xs text-slate-500 dark:text-zinc-400">Monthly comparison of inflows vs outflows</p>
             </div>
           </div>
-          <div className="h-64 w-full min-w-0 min-h-0">
+          <div className="h-64 w-full min-w-0 min-h-[250px]">
             {mounted ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={cashflowSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" vertical={false} opacity={0.4} />
                   <XAxis dataKey="month" stroke="#64748b" fontSize={11} tickLine={false} />
@@ -247,9 +247,9 @@ export default function DashboardPage() {
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Category Allocation</h3>
             <p className="text-xs text-slate-500 dark:text-zinc-400">Proportional volume distribution</p>
           </div>
-          <div className="h-56 w-full my-auto min-w-0 min-h-0">
+          <div className="h-56 w-full my-auto min-w-0 min-h-[220px]">
             {mounted ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={categoryBreakdown}

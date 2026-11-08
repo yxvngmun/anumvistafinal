@@ -47,6 +47,7 @@ export default function TenantsPage() {
   const [editContact, setEditContact] = useState("");
   const [editCnic, setEditCnic] = useState("");
   const [editStatus, setEditStatus] = useState<"occupied" | "vacant">("occupied");
+  const [editError, setEditError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [treasurers, setTreasurers] = useState<string[]>(DEFAULT_TREASURERS);
   const [creditedTo, setCreditedTo] = useState(DEFAULT_TREASURERS[0]);
@@ -113,6 +114,7 @@ export default function TenantsPage() {
     setEditContact(t.contact || t.phone || "");
     setEditCnic(t.cnic || "");
     setEditStatus(((t.status || "occupied").toLowerCase() === "vacant") ? "vacant" : "occupied");
+    setEditError(null);
   };
 
   const handleSaveResident = async (e: React.FormEvent) => {
@@ -120,10 +122,12 @@ export default function TenantsPage() {
     if (!editingTenant) return;
     const trimmed = editName.trim();
     if (!trimmed) {
+      setEditError("Resident name cannot be empty");
       setToast({ type: "error", message: "Resident name cannot be empty" });
       return;
     }
     setIsUpdating(true);
+    setEditError(null);
     try {
       await api.updateTenant(editingTenant.id, {
         name: trimmed,
@@ -136,7 +140,9 @@ export default function TenantsPage() {
       setEditingTenant(null);
       setTimeout(() => setToast(null), 3500);
     } catch (err) {
-      setToast({ type: "error", message: (err as Error).message });
+      const msg = (err as Error).message || "Failed to update resident";
+      setEditError(msg);
+      setToast({ type: "error", message: msg });
     } finally {
       setIsUpdating(false);
     }
@@ -243,14 +249,14 @@ export default function TenantsPage() {
 
       {toast && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm font-medium border flex items-center justify-between ${
+          className={`fixed top-5 right-5 z-[9999] max-w-md shadow-2xl rounded-xl px-4 py-3 text-sm font-medium border flex items-center gap-3 transition-all ${
             toast.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300"
-              : "bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300"
+              ? "bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-[#062419] dark:border-emerald-600 dark:text-emerald-200"
+              : "bg-rose-50 border-rose-300 text-rose-900 dark:bg-[#280c12] dark:border-rose-600 dark:text-rose-200"
           }`}
         >
-          <span>{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-black dark:hover:text-white">✕</button>
+          <span className="flex-1">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-black dark:hover:text-white p-1">✕</button>
         </div>
       )}
 
@@ -637,6 +643,12 @@ export default function TenantsPage() {
             </div>
 
             <form onSubmit={handleSaveResident} className="space-y-4">
+              {editError && (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-500/10 dark:border-rose-500/30 dark:text-rose-300 p-3 text-xs font-semibold flex items-center justify-between">
+                  <span>{editError}</span>
+                  <button type="button" onClick={() => setEditError(null)} className="text-slate-400 hover:text-rose-900">✕</button>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
                   Resident Name <span className="text-rose-500">*</span>

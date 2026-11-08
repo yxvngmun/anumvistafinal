@@ -10,13 +10,13 @@ from decimal import Decimal
 try:
     from backend import models, schemas
     from backend.database import engine, get_db
-    from backend.approval_endpoints import router as approval_router, _seed_users
+    from backend.approval_endpoints import router as approval_router, _seed_users, _audit
     from backend.auth import require_admin, require_super_admin
 except ImportError:
     import models
     import schemas
     from database import engine, get_db
-    from approval_endpoints import router as approval_router, _seed_users
+    from approval_endpoints import router as approval_router, _seed_users, _audit
     from auth import require_admin, require_super_admin
 
 # Create DB tables
@@ -290,7 +290,7 @@ def update_tenant_car_maintenance(
             detail="extra_car_maintenance_fee cannot be negative",
         )
 
-    occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
+    occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
@@ -336,7 +336,7 @@ def update_tenant(
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Resident name cannot be empty")
 
-    occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
+    occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
@@ -346,23 +346,18 @@ def update_tenant(
         occupant.contact = payload.contact.strip() or None
     if payload.cnic is not None:
         occupant.cnic = payload.cnic.strip() or None
-    if payload.status is not None:
-        st = payload.status.strip().lower()
-        if st in ("occupied", "vacant"):
-            occupant.status = st
-            if st == "vacant":
-                occupant.monthly_maintenance_fee = Decimal("4000.00")
-            else:
-                occupant.monthly_maintenance_fee = Decimal("5500.00")
 
     db.add(occupant)
 
-    _audit(db, models.AuditAction.verified, "occupant", occupant.id, user, {
-        "action": "update_name",
-        "old_name": old_name,
-        "new_name": name,
-        "unit_no": occupant.unit.unit_no if occupant.unit else "",
-    })
+    try:
+        _audit(db, models.AuditAction.verified, "occupant", occupant.id, user, {
+            "action": "update_name",
+            "old_name": old_name,
+            "new_name": name,
+            "unit_no": occupant.unit.unit_no if occupant.unit else "",
+        })
+    except Exception as audit_err:
+        print(f"Warning: Failed to create audit log for resident update: {audit_err}")
 
     db.commit()
     db.refresh(occupant)
@@ -494,24 +489,19 @@ def get_dashboard_metrics(
         func.extract('year', models.Transaction.date) == current_year
     ).scalar() or Decimal('0.00')
 
-    # Treasury Balance: matching active funds in hand across custodians (consistent with Treasury page)
-    holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
-    latest_period = db.query(func.max(models.FundsInHandEntry.period)).scalar()
-    if latest_period is not None:
-        treasury_balance = (
-            db.query(func.sum(models.FundsInHandEntry.amount))
-            .filter(
-                models.FundsInHandEntry.period == latest_period,
-                models.FundsInHandEntry.person.in_(holders),
-            )
-            .scalar()
-            or Decimal("0.00")
-        )
-    else:
-        treasury_balance = Decimal("0.00")
+    # Treasury Balance (All approved inflows - All approved outflows)
+    inflows = db.query(func.sum(models.Transaction.amount)).filter(
+        models.Transaction.type == models.TransactionType.INFLOW,
+        models.Transaction.status == models.TransactionStatus.approved,
+    ).scalar() or Decimal('0.00')
+    outflows = db.query(func.sum(models.Transaction.amount)).filter(
+        models.Transaction.type == models.TransactionType.OUTFLOW,
+        models.Transaction.status == models.TransactionStatus.approved,
+    ).scalar() or Decimal('0.00')
+    treasury_balance = inflows - outflows
 
     # Total overdues derived from tenant expected dues.
-    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
+    occupants = db.query(models.Occupant).all()
     total_overdues = sum((_compute_expected_dues(occupant) for occupant in occupants), Decimal("0.00"))
 
     # Ad revenue (All time, approved only)
@@ -874,7 +864,7 @@ def get_pending_dues_report(
     user: models.User = Depends(require_admin),
 ):
     now = datetime.now()
-    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
+    occupants = db.query(models.Occupant).all()
     entries = []
     total = Decimal("0.00")
 
@@ -916,7 +906,7 @@ def get_advance_payments_report(
 ):
     now = datetime.now()
     current_month_date = datetime(now.year, now.month, 1)
-    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
+    occupants = db.query(models.Occupant).all()
     entries = []
 
     for occ in occupants:
@@ -1057,7 +1047,7 @@ def get_due_reminders(
 ):
     """Generate a list of all residents with pending dues, suitable for sending reminders."""
     now = datetime.now()
-    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
+    occupants = db.query(models.Occupant).all()
     entries = []
     month_names = ["", "January", "February", "March", "April", "May", "June",
                    "July", "August", "September", "October", "November", "December"]
@@ -1117,7 +1107,7 @@ def generate_due_reminder_notifications(
 ):
     """Create in-app notification reminders for all super admins about overdue residents."""
     now = datetime.now()
-    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
+    occupants = db.query(models.Occupant).all()
     overdue_count = 0
 
     for occ in occupants:
