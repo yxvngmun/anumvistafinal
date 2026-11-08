@@ -267,8 +267,8 @@ def approve_transaction(txn_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status != models.TransactionStatus.pending:
         raise HTTPException(status_code=400, detail=f"Cannot approve: status is {txn.status.value}")
-    if txn.credited_to and user.username != txn.credited_to:
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} can approve this transaction.")
+    if txn.credited_to and user.username != txn.credited_to and user.username not in ("superadmin", "anumvista"):
+        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can approve this transaction.")
 
     txn.status = models.TransactionStatus.approved
     txn.approved_by_user_id = user.id
@@ -309,8 +309,8 @@ def reject_transaction(txn_id: int, body: schemas.ApprovalAction,
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status != models.TransactionStatus.pending:
         raise HTTPException(status_code=400, detail=f"Cannot reject: status is {txn.status.value}")
-    if txn.credited_to and user.username != txn.credited_to:
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} can reject this transaction.")
+    if txn.credited_to and user.username != txn.credited_to and user.username not in ("superadmin", "anumvista"):
+        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can reject this transaction.")
     txn.status = models.TransactionStatus.rejected
     txn.rejection_reason = body.reason or ""
     txn.approved_by_user_id = user.id
@@ -338,8 +338,8 @@ def cancel_transaction(txn_id: int, body: schemas.ApprovalAction,
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status == models.TransactionStatus.cancelled:
         raise HTTPException(status_code=400, detail="Already cancelled")
-    if txn.credited_to and user.username != txn.credited_to and txn.status == models.TransactionStatus.pending:
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} can cancel this pending transaction.")
+    if txn.credited_to and user.username != txn.credited_to and txn.status == models.TransactionStatus.pending and user.username not in ("superadmin", "anumvista"):
+        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can cancel this pending transaction.")
 
     was_approved = txn.status == models.TransactionStatus.approved
 

@@ -86,6 +86,12 @@ class Occupant(Base):
     status = Column(String, nullable=False, default="occupied") # "occupied" or "vacant"
     last_paid_month = Column(DateTime, nullable=True) # Tracks the latest month they have fully paid till
 
+    # Tenant details for rented units
+    is_rental = Column(Boolean, nullable=False, default=False)
+    tenant_name = Column(String, nullable=True)
+    tenant_contact = Column(String, nullable=True)
+    tenant_cnic = Column(String, nullable=True)
+
     unit = relationship("Unit", back_populates="occupants")
     transactions = relationship("Transaction", back_populates="occupant")
 

@@ -53,6 +53,10 @@ class OccupantBase(BaseModel):
     car_count: int = 1
     extra_car_maintenance_fee: Decimal = Decimal('0.00')
     status: str = "occupied"
+    is_rental: bool = False
+    tenant_name: Optional[str] = None
+    tenant_contact: Optional[str] = None
+    tenant_cnic: Optional[str] = None
 
 class OccupantOut(OccupantBase):
     id: int
@@ -191,6 +195,10 @@ class OccupantUpdate(BaseModel):
     contact: Optional[str] = None
     cnic: Optional[str] = None
     status: Optional[str] = None
+    is_rental: Optional[bool] = None
+    tenant_name: Optional[str] = None
+    tenant_contact: Optional[str] = None
+    tenant_cnic: Optional[str] = None
 
 
 class ExpenseDescriptionOut(BaseModel):

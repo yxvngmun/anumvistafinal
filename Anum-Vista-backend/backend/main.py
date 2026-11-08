@@ -48,6 +48,22 @@ def _ensure_occupant_car_columns() -> None:
                 )
             )
             print("Added column: extra_car_maintenance_fee")
+
+        if "is_rental" not in existing_columns:
+            conn.execute(text("ALTER TABLE occupants ADD COLUMN is_rental BOOLEAN NOT NULL DEFAULT 0"))
+            print("Added column: is_rental")
+
+        if "tenant_name" not in existing_columns:
+            conn.execute(text("ALTER TABLE occupants ADD COLUMN tenant_name VARCHAR"))
+            print("Added column: tenant_name")
+
+        if "tenant_contact" not in existing_columns:
+            conn.execute(text("ALTER TABLE occupants ADD COLUMN tenant_contact VARCHAR"))
+            print("Added column: tenant_contact")
+
+        if "tenant_cnic" not in existing_columns:
+            conn.execute(text("ALTER TABLE occupants ADD COLUMN tenant_cnic VARCHAR"))
+            print("Added column: tenant_cnic")
             
         conn.commit()
 
@@ -245,7 +261,7 @@ def update_tenant_status(
     occupant_id: int,
     payload: schemas.OccupantStatusUpdate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
@@ -280,7 +296,7 @@ def update_tenant_car_maintenance(
     occupant_id: int,
     payload: schemas.OccupantCarUpdate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     if payload.car_count < 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="car_count cannot be negative")
@@ -290,7 +306,7 @@ def update_tenant_car_maintenance(
             detail="extra_car_maintenance_fee cannot be negative",
         )
 
-    occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
+    occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
@@ -336,7 +352,7 @@ def update_tenant(
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Resident name cannot be empty")
 
-    occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
+    occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
@@ -346,6 +362,27 @@ def update_tenant(
         occupant.contact = payload.contact.strip() or None
     if payload.cnic is not None:
         occupant.cnic = payload.cnic.strip() or None
+    if payload.status is not None:
+        st = payload.status.strip().lower()
+        if st in ("occupied", "vacant"):
+            occupant.status = st
+            if st == "vacant":
+                occupant.monthly_maintenance_fee = Decimal("4000.00")
+            else:
+                occupant.monthly_maintenance_fee = Decimal("5500.00")
+
+    if payload.is_rental is not None:
+        occupant.is_rental = payload.is_rental
+        if occupant.unit:
+            occupant.unit.is_rental = payload.is_rental
+            db.add(occupant.unit)
+
+    if payload.tenant_name is not None:
+        occupant.tenant_name = payload.tenant_name.strip() or None
+    if payload.tenant_contact is not None:
+        occupant.tenant_contact = payload.tenant_contact.strip() or None
+    if payload.tenant_cnic is not None:
+        occupant.tenant_cnic = payload.tenant_cnic.strip() or None
 
     db.add(occupant)
 
@@ -774,7 +811,7 @@ def get_resident_ledger(
     occupant_id: int,
     year: int = Query(default=None, ge=1900, le=2100),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
@@ -861,7 +898,7 @@ def get_resident_ledger(
 @app.get("/api/reports/pending-dues", response_model=schemas.PendingDuesReport)
 def get_pending_dues_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     now = datetime.now()
     occupants = db.query(models.Occupant).all()
@@ -902,7 +939,7 @@ def get_pending_dues_report(
 @app.get("/api/reports/advance-payments", response_model=schemas.AdvancePaymentReport)
 def get_advance_payments_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     now = datetime.now()
     current_month_date = datetime(now.year, now.month, 1)
@@ -936,7 +973,7 @@ def get_expense_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_super_admin),
 ):
     base = db.query(models.Transaction).filter(
         models.Transaction.type == models.TransactionType.OUTFLOW,
