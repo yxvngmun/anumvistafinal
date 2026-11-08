@@ -8,8 +8,13 @@ import type {
   Transaction,
 } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-const buildUrl = (path: string): string => `${API_BASE_URL}${path}`;
+const rawBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, "");
+const API_BASE_URL = cleanBaseUrl.endsWith("/api") ? cleanBaseUrl : `${cleanBaseUrl}/api`;
+const buildUrl = (path: string): string => {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${cleanPath}`;
+};
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
