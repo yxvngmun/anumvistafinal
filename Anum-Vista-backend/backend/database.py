@@ -12,8 +12,9 @@ TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 if TURSO_URL and TURSO_TOKEN:
     # Turso / LibSQL connection
     turso_host = TURSO_URL.replace("libsql://", "").replace("https://", "").strip("/")
-    # Crucial: secure=true enforces HTTPS; auth_token in connect_args delivers the JWT to libsql_experimental
-    DATABASE_URL = f"sqlite+libsql://{turso_host}?authToken={TURSO_TOKEN}&secure=true"
+    # Crucial: secure=true enforces HTTPS without adding tokens to the path URL.
+    # auth_token in connect_args delivers the JWT header directly to libsql_experimental.
+    DATABASE_URL = f"sqlite+libsql://{turso_host}?secure=true"
     engine = create_engine(
         DATABASE_URL,
         connect_args={
