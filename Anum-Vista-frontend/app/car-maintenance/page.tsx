@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Occupant } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
 
 const EXTRA_MAINTENANCE_PER_ADDITIONAL_CAR = 2000;
 const VACANT_BASE_FEE = 4000;
@@ -13,6 +14,8 @@ const formatAmount = (value: string | number | undefined): string =>
   `₨ ${parseFloat(String(value || "0")).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
 
 export default function CarsAndParkingPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const qc = useQueryClient();
   const [editors, setEditors] = useState<Record<number, { carCount: number }>>({});
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -57,6 +60,10 @@ export default function CarsAndParkingPage() {
   }, [tenants, editors]);
 
   const saveRow = async (tenant: Occupant) => {
+    if (!isSuperAdmin) {
+      setToast({ type: "error", message: "Only Super Admin can change vehicle count" });
+      return;
+    }
     const editor = editors[tenant.id];
     if (!editor) return;
     const normalizedCars = Math.max(0, Number(editor.carCount || 0));
@@ -196,39 +203,45 @@ export default function CarsAndParkingPage() {
 
                       {/* Vehicles Counter */}
                       <td className="py-4 px-4 text-center">
-                        <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-white/[0.04] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditors((prev) => ({
-                                ...prev,
-                                [t.id]: {
-                                  carCount: Math.max(0, carCount - 1),
-                                },
-                              }))
-                            }
-                            className="w-7 h-7 rounded flex items-center justify-center font-bold text-slate-600 hover:text-black hover:bg-white dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
-                          >
-                            –
-                          </button>
-                          <span className="w-8 text-center font-mono font-bold text-sm text-slate-900 dark:text-white">
-                            {carCount}
+                        {isSuperAdmin ? (
+                          <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-white/[0.04] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditors((prev) => ({
+                                  ...prev,
+                                  [t.id]: {
+                                    carCount: Math.max(0, carCount - 1),
+                                  },
+                                }))
+                              }
+                              className="w-7 h-7 rounded flex items-center justify-center font-bold text-slate-600 hover:text-black hover:bg-white dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+                            >
+                              –
+                            </button>
+                            <span className="w-8 text-center font-mono font-bold text-sm text-slate-900 dark:text-white">
+                              {carCount}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditors((prev) => ({
+                                  ...prev,
+                                  [t.id]: {
+                                    carCount: carCount + 1,
+                                  },
+                                }))
+                              }
+                              className="w-7 h-7 rounded flex items-center justify-center font-bold text-slate-600 hover:text-black hover:bg-white dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+                            >
+                              +
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="inline-block px-3 py-1 font-mono font-bold text-sm text-slate-800 dark:text-zinc-200 bg-slate-100 dark:bg-white/[0.04] rounded-lg border border-slate-200 dark:border-white/10">
+                            {carCount} {carCount === 1 ? "car" : "cars"}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditors((prev) => ({
-                                ...prev,
-                                [t.id]: {
-                                  carCount: carCount + 1,
-                                },
-                              }))
-                            }
-                            className="w-7 h-7 rounded flex items-center justify-center font-bold text-slate-600 hover:text-black hover:bg-white dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
-                          >
-                            +
-                          </button>
-                        </div>
+                        )}
                       </td>
 
                       {/* Extra Cars Fee */}
@@ -249,14 +262,18 @@ export default function CarsAndParkingPage() {
 
                       {/* Action */}
                       <td className="py-4 px-4 text-right">
-                        <button
-                          type="button"
-                          disabled={isSaving}
-                          onClick={() => saveRow(t)}
-                          className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-4 py-2 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
-                        >
-                          {isSaving ? "Saving..." : "Save"}
-                        </button>
+                        {isSuperAdmin ? (
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => saveRow(t)}
+                            className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-4 py-2 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
+                          >
+                            {isSaving ? "Saving..." : "Save"}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-zinc-500 font-medium">Read-only</span>
+                        )}
                       </td>
                     </tr>
                   );

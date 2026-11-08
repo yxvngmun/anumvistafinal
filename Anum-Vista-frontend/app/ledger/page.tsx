@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api, LedgerOut } from "@/lib/api";
 import type { Occupant } from "@/lib/types";
@@ -14,11 +15,20 @@ const statusStyles: Record<string, string> = {
   pending: "bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20",
   partial: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
   advance: "bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-500/20",
-  upcoming: "bg-slate-100 dark:bg-zinc-500/10 text-slate-700 dark:text-zinc-400 border-slate-200 dark:border-zinc-500/20",
+  upcoming: "bg-slate-100 dark:zinc-500/10 text-slate-700 dark:text-zinc-400 border-slate-200 dark:border-zinc-500/20",
 };
 
 export default function LedgerPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (isAuthenticated && user && !isSuperAdmin) {
+      router.replace("/tenants");
+    }
+  }, [isAuthenticated, user, isSuperAdmin, router]);
+
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [search, setSearch] = useState("");
@@ -26,13 +36,13 @@ export default function LedgerPage() {
   const { data: tenants = [] } = useQuery<Occupant[]>({
     queryKey: ["tenants"],
     queryFn: api.getTenants,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isSuperAdmin,
   });
 
   const { data: ledger, isLoading: ledgerLoading } = useQuery<LedgerOut>({
     queryKey: ["ledger", selectedId, year],
     queryFn: () => api.getResidentLedger(selectedId!, year),
-    enabled: isAuthenticated && selectedId != null,
+    enabled: isAuthenticated && isSuperAdmin && selectedId != null,
   });
 
   const filteredTenants = tenants.filter((t) => {
@@ -42,6 +52,13 @@ export default function LedgerPage() {
   });
 
   if (!isAuthenticated) return null;
+  if (user && !isSuperAdmin) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 dark:text-zinc-400">
+        Super Admin permissions required to view Reports & Ledgers.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

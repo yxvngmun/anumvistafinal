@@ -395,7 +395,16 @@ export const api = {
 
   updateTenant: (
     occupantId: number,
-    payload: { name: string; contact?: string; cnic?: string; status?: "occupied" | "vacant" | string },
+    payload: {
+      name: string;
+      contact?: string;
+      cnic?: string;
+      status?: "occupied" | "vacant" | string;
+      is_rental?: boolean;
+      tenant_name?: string;
+      tenant_contact?: string;
+      tenant_cnic?: string;
+    },
   ): Promise<Occupant> =>
     fetchJson<Occupant>(`/tenants/${occupantId}`, {
       method: "PATCH",

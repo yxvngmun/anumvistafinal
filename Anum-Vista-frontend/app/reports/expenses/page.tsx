@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api, ExpenseReport } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -14,7 +15,16 @@ const MONTH_LABELS = [
 ];
 
 export default function ExpensesPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (isAuthenticated && user && !isSuperAdmin) {
+      router.replace("/tenants");
+    }
+  }, [isAuthenticated, user, isSuperAdmin, router]);
+
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -22,10 +32,17 @@ export default function ExpensesPage() {
   const { data, isLoading } = useQuery<ExpenseReport>({
     queryKey: ["reports", "expenses", year, month],
     queryFn: () => api.getExpenseReport(year, month),
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isSuperAdmin,
   });
 
   if (!isAuthenticated) return null;
+  if (user && !isSuperAdmin) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 dark:text-zinc-400">
+        Super Admin permissions required to view Reports & Ledgers.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

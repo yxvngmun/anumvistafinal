@@ -233,32 +233,6 @@ function TransactionsContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Inflow/Outflow tab toggle */}
-          {isSuperAdmin && (
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
-              <button
-                onClick={() => router.push("/transactions?tab=inflow")}
-                className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
-                  currentTab === "inflow"
-                    ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
-                    : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
-                }`}
-              >
-                Inflow (Collections)
-              </button>
-              <button
-                onClick={() => router.push("/transactions?tab=outflow")}
-                className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${
-                  currentTab === "outflow"
-                    ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
-                    : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
-                }`}
-              >
-                Outflow (Expenses)
-              </button>
-            </div>
-          )}
-
           {currentTab === "outflow" && (
             <button
               onClick={() => {

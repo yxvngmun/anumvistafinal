@@ -45,6 +45,10 @@ export interface Occupant {
   expected_dues: DecimalString;
   status?: string;
   residence_status?: "occupied" | "vacant";
+  is_rental?: boolean;
+  tenant_name?: string | null;
+  tenant_contact?: string | null;
+  tenant_cnic?: string | null;
   hasPastDues?: boolean;
   unpaidPastMonths?: string[];
   paidMonths?: string[];

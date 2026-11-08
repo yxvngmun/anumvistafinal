@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api, PendingDuesReport } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -11,7 +12,16 @@ const fmt = (v: string | number) =>
 type SortKey = "unit_no" | "name" | "months_overdue" | "total_due";
 
 export default function PendingDuesPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (isAuthenticated && user && !isSuperAdmin) {
+      router.replace("/tenants");
+    }
+  }, [isAuthenticated, user, isSuperAdmin, router]);
+
   const [sortBy, setSortBy] = useState<SortKey>("total_due");
   const [sortAsc, setSortAsc] = useState(false);
   const [search, setSearch] = useState("");
@@ -19,8 +29,16 @@ export default function PendingDuesPage() {
   const { data, isLoading } = useQuery<PendingDuesReport>({
     queryKey: ["reports", "pending-dues"],
     queryFn: api.getPendingDuesReport,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isSuperAdmin,
   });
+
+  if (user && !isSuperAdmin) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 dark:text-zinc-400">
+        Super Admin permissions required to view Reports & Ledgers.
+      </div>
+    );
+  }
 
   const sorted = useMemo(() => {
     if (!data) return [];

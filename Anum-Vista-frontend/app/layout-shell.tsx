@@ -262,60 +262,60 @@ function Sidebar({
               )}
             </li>
 
-            {/* Reports Group */}
-            <li className="pt-2">
-              <button
-                type="button"
-                onClick={() => setReportsOpen(!reportsOpen)}
-                title={collapsed ? "Reports & Ledger" : undefined}
-                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors press-feedback ${
-                  pathname.startsWith("/reports") ||
-                  pathname.startsWith("/ledger") ||
-                  pathname.startsWith("/reminders")
-                    ? "bg-slate-100 text-black dark:bg-white/10 dark:text-white font-semibold"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
-                } ${collapsed ? "justify-center px-0" : ""}`}
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  {!collapsed && <span className="truncate">Reports & Ledger</span>}
-                </div>
-                {!collapsed && (
-                  <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${reportsOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
+            {/* Reports Group (Super Admin only) */}
+            {isSuperAdmin && (
+              <li className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReportsOpen(!reportsOpen)}
+                  title={collapsed ? "Reports & Ledger" : undefined}
+                  className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors press-feedback ${
+                    pathname.startsWith("/reports") ||
+                    pathname.startsWith("/ledger") ||
+                    pathname.startsWith("/reminders")
+                      ? "bg-slate-100 text-black dark:bg-white/10 dark:text-white font-semibold"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
+                  } ${collapsed ? "justify-center px-0" : ""}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {!collapsed && <span className="truncate">Reports & Ledger</span>}
+                  </div>
+                  {!collapsed && (
+                    <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${reportsOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </button>
+                {reportsOpen && !collapsed && (
+                  <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-1">
+                    {[
+                      { href: "/reports/pending-dues", label: "Pending Dues" },
+                      { href: "/reports/advance-payments", label: "Advance Payments" },
+                      { href: "/reports/expenses", label: "Expenses Breakdown" },
+                      { href: "/reports/cash-reconciliation", label: "Cash Reconciliation" },
+                      { href: "/ledger", label: "Resident Ledger" },
+                      /* { href: "/reminders", label: "Due Reminders" }, -- commented out for now */
+                    ].map((sub) => (
+                      <li key={sub.href}>
+                        <Link
+                          href={sub.href}
+                          className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+                            pathname === sub.href
+                              ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
+                              : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+                          }`}
+                        >
+                          {sub.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-              </button>
-              {reportsOpen && !collapsed && (
-                <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-1">
-                  {[
-                    { href: "/reports/pending-dues", label: "Pending Dues" },
-                    { href: "/reports/advance-payments", label: "Advance Payments" },
-                    { href: "/reports/expenses", label: "Expenses Breakdown" },
-                    ...(isSuperAdmin
-                      ? [{ href: "/reports/cash-reconciliation", label: "Cash Reconciliation" }]
-                      : []),
-                    { href: "/ledger", label: "Resident Ledger" },
-                    { href: "/reminders", label: "Due Reminders" },
-                  ].map((sub) => (
-                    <li key={sub.href}>
-                      <Link
-                        href={sub.href}
-                        className={`block rounded-md px-3 py-2 text-sm transition-colors ${
-                          pathname === sub.href
-                            ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
-                            : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
-                        }`}
-                      >
-                        {sub.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
+              </li>
+            )}
           </ul>
         </nav>
       </div>

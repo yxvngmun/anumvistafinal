@@ -1,18 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api, AdvancePaymentReport } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 export default function AdvancePaymentsPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (isAuthenticated && user && !isSuperAdmin) {
+      router.replace("/tenants");
+    }
+  }, [isAuthenticated, user, isSuperAdmin, router]);
+
   const [search, setSearch] = useState("");
 
   const { data, isLoading } = useQuery<AdvancePaymentReport>({
     queryKey: ["reports", "advance-payments"],
     queryFn: api.getAdvancePaymentsReport,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && isSuperAdmin,
   });
 
   const filtered = useMemo(() => {
@@ -24,6 +34,13 @@ export default function AdvancePaymentsPage() {
   }, [data, search]);
 
   if (!isAuthenticated) return null;
+  if (user && !isSuperAdmin) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-500 dark:text-zinc-400">
+        Super Admin permissions required to view Reports & Ledgers.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

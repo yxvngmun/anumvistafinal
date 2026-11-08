@@ -47,6 +47,10 @@ export default function TenantsPage() {
   const [editContact, setEditContact] = useState("");
   const [editCnic, setEditCnic] = useState("");
   const [editStatus, setEditStatus] = useState<"occupied" | "vacant">("occupied");
+  const [isRental, setIsRental] = useState(false);
+  const [tenantName, setTenantName] = useState("");
+  const [tenantContact, setTenantContact] = useState("");
+  const [tenantCnic, setTenantCnic] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [treasurers, setTreasurers] = useState<string[]>(DEFAULT_TREASURERS);
@@ -97,8 +101,10 @@ export default function TenantsPage() {
       const matchSearch =
         !q ||
         t.name.toLowerCase().includes(q) ||
+        (t.tenant_name && t.tenant_name.toLowerCase().includes(q)) ||
         t.unit.unit_no.toLowerCase().includes(q) ||
-        (t.contact || "").includes(q);
+        (t.contact || "").includes(q) ||
+        (t.tenant_contact || "").includes(q);
       const st = computeStatus(t);
       const matchStatus =
         statusFilter === "ALL" ||
@@ -114,6 +120,10 @@ export default function TenantsPage() {
     setEditContact(t.contact || t.phone || "");
     setEditCnic(t.cnic || "");
     setEditStatus(((t.status || "occupied").toLowerCase() === "vacant") ? "vacant" : "occupied");
+    setIsRental(Boolean(t.is_rental || t.unit?.is_rental || t.tenant_name));
+    setTenantName(t.tenant_name || "");
+    setTenantContact(t.tenant_contact || "");
+    setTenantCnic(t.tenant_cnic || "");
     setEditError(null);
   };
 
@@ -134,6 +144,10 @@ export default function TenantsPage() {
         contact: editContact.trim() || undefined,
         cnic: editCnic.trim() || undefined,
         status: editStatus,
+        is_rental: isRental,
+        tenant_name: isRental ? (tenantName.trim() || undefined) : undefined,
+        tenant_contact: isRental ? (tenantContact.trim() || undefined) : undefined,
+        tenant_cnic: isRental ? (tenantCnic.trim() || undefined) : undefined,
       });
       qc.invalidateQueries({ queryKey: ["tenants"] });
       setToast({ type: "success", message: `Updated Flat ${editingTenant.unit.unit_no} (${trimmed} · ${editStatus})` });
@@ -344,37 +358,61 @@ export default function TenantsPage() {
                             </button>
                           )}
                         </div>
-                        {t.unit.is_rental && (
-                          <span className="text-xs text-slate-500 dark:text-zinc-400 block mt-0.5">Tenant (Rental)</span>
+                        {(t.is_rental || t.tenant_name) && (
+                          <div className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+                            <div className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-zinc-300">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-white/10">Tenant</span>
+                              <span className="font-semibold text-slate-800 dark:text-zinc-200">{t.tenant_name || "—"}</span>
+                            </div>
+                            {(t.tenant_contact || t.tenant_cnic) && (
+                              <div className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                                {t.tenant_contact && <span>Ph: {t.tenant_contact}</span>}
+                                {t.tenant_contact && t.tenant_cnic && <span> · </span>}
+                                {t.tenant_cnic && <span>CNIC: {t.tenant_cnic}</span>}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
 
                       {/* Vacancy / Occupancy Status Selector */}
                       <td className="py-4 px-4 text-center">
-                        <select
-                          value={isVacant ? "vacant" : "occupied"}
-                          onChange={async (e) => {
-                            const nextStatus = e.target.value as "occupied" | "vacant";
-                            try {
-                              await api.updateTenantStatus(t.id, nextStatus);
-                              qc.invalidateQueries({ queryKey: ["tenants"] });
-                              setToast({
-                                type: "success",
-                                message: `Unit ${t.unit.unit_no} set to ${nextStatus === "vacant" ? "Vacant (₨ 4,000 base)" : "Occupied (₨ 5,500 base)"}`,
-                              });
-                            } catch (err) {
-                              setToast({ type: "error", message: (err as Error).message });
-                            }
-                          }}
-                          className={`rounded-lg px-2.5 py-1 text-xs font-bold border outline-none cursor-pointer transition-colors ${
-                            isVacant
-                              ? "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"
-                              : "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
-                          }`}
-                        >
-                          <option value="occupied">Occupied</option>
-                          <option value="vacant">Vacant</option>
-                        </select>
+                        {isSuperAdmin ? (
+                          <select
+                            value={isVacant ? "vacant" : "occupied"}
+                            onChange={async (e) => {
+                              const nextStatus = e.target.value as "occupied" | "vacant";
+                              try {
+                                await api.updateTenantStatus(t.id, nextStatus);
+                                qc.invalidateQueries({ queryKey: ["tenants"] });
+                                setToast({
+                                  type: "success",
+                                  message: `Unit ${t.unit.unit_no} set to ${nextStatus === "vacant" ? "Vacant (₨ 4,000 base)" : "Occupied (₨ 5,500 base)"}`,
+                                });
+                              } catch (err) {
+                                setToast({ type: "error", message: (err as Error).message });
+                              }
+                            }}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-bold border outline-none cursor-pointer transition-colors ${
+                              isVacant
+                                ? "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"
+                                : "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
+                            }`}
+                          >
+                            <option value="occupied">Occupied</option>
+                            <option value="vacant">Vacant</option>
+                          </select>
+                        ) : (
+                          <span
+                            className={`inline-block rounded-lg px-2.5 py-1 text-xs font-bold border ${
+                              isVacant
+                                ? "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"
+                                : "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
+                            }`}
+                          >
+                            {isVacant ? "Vacant" : "Occupied"}
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-4 px-4 text-slate-600 dark:text-zinc-300 font-mono text-sm">{t.contact || t.phone || "—"}</td>
@@ -702,6 +740,65 @@ export default function TenantsPage() {
                   placeholder="e.g. 42101-1234567-1"
                   className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
                 />
+              </div>
+
+              {/* Rented to Tenant toggle & inputs */}
+              <div className="pt-3 border-t border-slate-100 dark:border-white/10 space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isRental}
+                    onChange={(e) => setIsRental(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-black focus:ring-0 dark:border-white/20"
+                  />
+                  <span className="text-sm font-bold text-slate-800 dark:text-zinc-200">
+                    Rented to Tenant
+                  </span>
+                </label>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Enable if this flat is currently rented to a tenant.
+                </p>
+
+                {isRental && (
+                  <div className="space-y-3 pl-3 border-l-2 border-slate-200 dark:border-white/20 mt-2">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-300 mb-1">
+                        Tenant Name
+                      </label>
+                      <input
+                        type="text"
+                        value={tenantName}
+                        onChange={(e) => setTenantName(e.target.value)}
+                        placeholder="e.g. Tenant Full Name"
+                        className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-300 mb-1">
+                        Tenant Phone / WhatsApp
+                      </label>
+                      <input
+                        type="text"
+                        value={tenantContact}
+                        onChange={(e) => setTenantContact(e.target.value)}
+                        placeholder="e.g. 0300-9876543"
+                        className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-300 mb-1">
+                        Tenant CNIC
+                      </label>
+                      <input
+                        type="text"
+                        value={tenantCnic}
+                        onChange={(e) => setTenantCnic(e.target.value)}
+                        placeholder="e.g. 42101-9876543-1"
+                        className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-white/10">
