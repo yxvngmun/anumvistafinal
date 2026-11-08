@@ -52,6 +52,7 @@ class OccupantBase(BaseModel):
     contact: Optional[str] = None
     car_count: int = 1
     extra_car_maintenance_fee: Decimal = Decimal('0.00')
+    status: str = "occupied"
 
 class OccupantOut(OccupantBase):
     id: int
@@ -177,7 +178,8 @@ class OutstandingMaintenanceSnapshotOut(BaseModel):
 
 class OccupantCarUpdate(BaseModel):
     car_count: int
-    extra_car_maintenance_fee: Decimal
+    extra_car_maintenance_fee: Decimal = Decimal('2000.00')
+    status: Optional[str] = "occupied"
 
 
 class OccupantUpdate(BaseModel):

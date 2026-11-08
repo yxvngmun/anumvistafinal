@@ -224,9 +224,15 @@ def get_tenants(
 ):
     occupants = db.query(models.Occupant).all()
     for occupant in occupants:
+        st = (occupant.status or "occupied").lower()
+        occupant.status = st
+        if st == "vacant":
+            occupant.monthly_maintenance_fee = Decimal("4000.00")
+        else:
+            occupant.monthly_maintenance_fee = Decimal("5500.00")
         extra_cars = max(0, int(occupant.car_count or 1) - 1)
-        extra_fee = occupant.extra_car_maintenance_fee or Decimal("0.00")
-        base_fee = occupant.monthly_maintenance_fee or Decimal("0.00")
+        extra_fee = occupant.extra_car_maintenance_fee or Decimal("2000.00")
+        base_fee = occupant.monthly_maintenance_fee
         occupant.extra_cars = extra_cars
         occupant.extra_car_charges = extra_fee * extra_cars
         occupant.total_monthly_maintenance = base_fee + occupant.extra_car_charges
@@ -255,13 +261,28 @@ def update_tenant_car_maintenance(
 
     occupant.car_count = payload.car_count
     occupant.extra_car_maintenance_fee = payload.extra_car_maintenance_fee
+    if payload.status:
+        st = payload.status.strip().lower()
+        if st in ("vacant", "occupied"):
+            occupant.status = st
+            if st == "vacant":
+                occupant.monthly_maintenance_fee = Decimal("4000.00")
+            else:
+                occupant.monthly_maintenance_fee = Decimal("5500.00")
+
     db.add(occupant)
     db.commit()
     db.refresh(occupant)
 
+    st = (occupant.status or "occupied").lower()
+    if st == "vacant":
+        occupant.monthly_maintenance_fee = Decimal("4000.00")
+    else:
+        occupant.monthly_maintenance_fee = Decimal("5500.00")
+
     extra_cars = max(0, int(occupant.car_count or 1) - 1)
-    extra_fee = occupant.extra_car_maintenance_fee or Decimal("0.00")
-    base_fee = occupant.monthly_maintenance_fee or Decimal("0.00")
+    extra_fee = occupant.extra_car_maintenance_fee or Decimal("2000.00")
+    base_fee = occupant.monthly_maintenance_fee
     occupant.extra_cars = extra_cars
     occupant.extra_car_charges = extra_fee * extra_cars
     occupant.total_monthly_maintenance = base_fee + occupant.extra_car_charges

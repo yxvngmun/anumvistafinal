@@ -83,6 +83,7 @@ class Occupant(Base):
     contact = Column(String, nullable=True)
     car_count = Column(Integer, nullable=False, default=1)
     extra_car_maintenance_fee = Column(Numeric(10, 2), nullable=False, default=2000.0)
+    status = Column(String, nullable=False, default="occupied") # "occupied" or "vacant"
     last_paid_month = Column(DateTime, nullable=True) # Tracks the latest month they have fully paid till
 
     unit = relationship("Unit", back_populates="occupants")

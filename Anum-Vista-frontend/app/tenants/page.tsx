@@ -9,6 +9,21 @@ import type { Occupant } from "@/lib/types";
 const fmt = (v: string | number) =>
   `₨ ${Number(v).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
 
+const formatMonthDisplay = (keyOrLabel: string): string => {
+  if (!keyOrLabel) return "";
+  if (/^\d{4}-\d{2}$/.test(keyOrLabel)) {
+    const [year, month] = keyOrLabel.split("-").map(Number);
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    if (month >= 1 && month <= 12) {
+      return `${monthNames[month - 1]} ${year}`;
+    }
+  }
+  return keyOrLabel;
+};
+
 const computeStatus = (t: Occupant): "Overdue" | "Settled" => {
   if (!t.last_paid_month) return "Overdue";
   const now = new Date();
@@ -138,6 +153,28 @@ export default function TenantsPage() {
     });
   };
 
+  const handleToggleMonth = (targetIdx: number) => {
+    if (unpaidMonths.length === 0) return;
+    const targetKey = unpaidMonths[targetIdx].month_key;
+    const isChecked = selectedMonths.has(targetKey);
+    const isLastSelected = targetIdx === selectedMonths.size - 1;
+
+    // Dues condition: must clear chronologically starting from earliest unpaid month
+    if (isChecked && isLastSelected && selectedMonths.size > 1) {
+      const next = new Set<string>();
+      for (let i = 0; i < targetIdx; i++) {
+        next.add(unpaidMonths[i].month_key);
+      }
+      setSelectedMonths(next);
+    } else {
+      const next = new Set<string>();
+      for (let i = 0; i <= targetIdx; i++) {
+        next.add(unpaidMonths[i].month_key);
+      }
+      setSelectedMonths(next);
+    }
+  };
+
   const handleSubmitPayment = async () => {
     if (!selectedTenant) return;
     setIsSubmitting(true);
@@ -158,6 +195,8 @@ export default function TenantsPage() {
         if (selectedMonths.size === 0) {
           throw new Error("Please select at least one month");
         }
+        const sortedKeys = Array.from(selectedMonths).sort();
+        const formattedMonthNames = sortedKeys.map(formatMonthDisplay).join(", ");
         const total = selectedMonths.size * Number(selectedTenant.total_monthly_maintenance || selectedTenant.monthly_maintenance_fee);
         await api.createTransaction({
           date: new Date().toISOString(),
@@ -168,9 +207,9 @@ export default function TenantsPage() {
           credited_to: creditedTo,
           payment_mode: paymentMode,
           generated_by: generatedBy,
-          notes: `Maintenance fee for months: ${Array.from(selectedMonths).join(", ")}`,
+          notes: `Maintenance fee for: ${formattedMonthNames}`,
         });
-        setToast({ type: "success", message: "Payment logged successfully" });
+        setToast({ type: "success", message: `Payment for ${formattedMonthNames} logged successfully` });
       }
       qc.invalidateQueries({ queryKey: ["tenants"] });
       setSelectedTenant(null);
@@ -296,6 +335,11 @@ export default function TenantsPage() {
                         </div>
                         {t.unit.is_rental && (
                           <span className="text-[10px] text-slate-500 dark:text-zinc-400">Tenant (Rental)</span>
+                        )}
+                        {(t.status || "").toLowerCase() === "vacant" && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-500/20">
+                            Vacant
+                          </span>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 dark:text-zinc-300 font-mono">{t.contact || t.phone || "—"}</td>
@@ -424,37 +468,59 @@ export default function TenantsPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
-                  Unpaid Months
-                </label>
-                <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+                    Unpaid Months
+                  </label>
+                  <span className="text-[10px] text-slate-500 dark:text-zinc-400">
+                    Earliest dues cleared first
+                  </span>
+                </div>
+                <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 space-y-1">
                   {unpaidMonths.length === 0 ? (
                     <p className="text-xs text-slate-500 dark:text-zinc-400 p-2">No past unpaid months recorded. Advance payment can be logged.</p>
                   ) : (
-                    unpaidMonths.map((m) => {
+                    unpaidMonths.map((m, idx) => {
                       const checked = selectedMonths.has(m.month_key);
                       return (
-                        <label
+                        <div
                           key={m.month_key}
-                          className="flex items-center justify-between p-2 rounded hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer"
+                          onClick={() => handleToggleMonth(idx)}
+                          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                            checked
+                              ? "bg-emerald-50/80 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30"
+                              : "hover:bg-slate-100 dark:hover:bg-white/[0.04] border border-transparent"
+                          }`}
                         >
-                          <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">{m.month_key}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                              {m.label || formatMonthDisplay(m.month_key)}
+                            </span>
+                            <span className="text-[9px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-500/20">
+                              Due
+                            </span>
+                          </div>
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={() => {
-                              const next = new Set(selectedMonths);
-                              if (checked) next.delete(m.month_key);
-                              else next.add(m.month_key);
-                              setSelectedMonths(next);
-                            }}
-                            className="rounded border-slate-300 text-black focus:ring-0"
+                            onChange={() => handleToggleMonth(idx)}
+                            className="rounded border-slate-300 text-black focus:ring-0 cursor-pointer"
                           />
-                        </label>
+                        </div>
                       );
                     })
                   )}
                 </div>
+                {selectedMonths.size > 0 && (
+                  <div className="rounded-lg bg-slate-100 dark:bg-white/[0.04] p-2 text-xs flex items-center justify-between">
+                    <span className="text-slate-600 dark:text-zinc-400 text-[11px]">
+                      Selected ({selectedMonths.size} mo):
+                    </span>
+                    <span className="font-semibold text-slate-900 dark:text-white text-right truncate max-w-[240px] text-[11px]">
+                      {Array.from(selectedMonths).sort().map(formatMonthDisplay).join(", ")}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 

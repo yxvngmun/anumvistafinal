@@ -8,6 +8,21 @@ import { useAuth } from "@/lib/auth-context";
 const fmt = (v: string | number) =>
   `₨ ${Number(v).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
 
+const formatMonthDisplay = (keyOrLabel: string): string => {
+  if (!keyOrLabel) return "";
+  if (/^\d{4}-\d{2}$/.test(keyOrLabel)) {
+    const [year, month] = keyOrLabel.split("-").map(Number);
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    if (month >= 1 && month <= 12) {
+      return `${monthNames[month - 1]} ${year}`;
+    }
+  }
+  return keyOrLabel;
+};
+
 export default function RemindersPage() {
   const { user, isAuthenticated } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -44,7 +59,8 @@ export default function RemindersPage() {
     if (!entry.contact) return;
     setWhatsappStatus((prev) => ({ ...prev, [entry.occupant_id]: "sending" }));
     try {
-      const message = `Dear ${entry.name},\n\nMaintenance dues of ${fmt(entry.total_due)} (${entry.months_overdue} months) for Unit ${entry.unit_no} are pending.\nUnpaid months: ${entry.unpaid_months.join(", ")}\n\nPlease clear payment.\n\nAnum Vista Management`;
+      const formattedMonths = entry.unpaid_months.map(formatMonthDisplay).join(", ");
+      const message = `Dear ${entry.name},\n\nMaintenance dues of ${fmt(entry.total_due)} (${entry.months_overdue} months) for Unit ${entry.unit_no} are pending.\nUnpaid months: ${formattedMonths}\n\nPlease clear payment.\n\nAnum Vista Management`;
       await api.sendWhatsAppReminder({
         occupant_id: entry.occupant_id,
         phone: entry.contact,

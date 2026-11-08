@@ -377,7 +377,7 @@ export const api = {
 
   updateCarMaintenance: (
     occupantId: number,
-    payload: { car_count: number; extra_car_maintenance_fee: string },
+    payload: { car_count: number; extra_car_maintenance_fee: string; status?: "occupied" | "vacant" | string },
   ): Promise<Occupant> =>
     fetchJson<Occupant>(`/tenants/${occupantId}/cars`, {
       method: "PATCH",
