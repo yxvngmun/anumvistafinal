@@ -12,8 +12,12 @@ TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 if TURSO_URL and TURSO_TOKEN:
     # Turso / LibSQL connection
     turso_host = TURSO_URL.replace("libsql://", "").replace("https://", "").strip("/")
-    DATABASE_URL = f"sqlite+libsql://{turso_host}?authToken={TURSO_TOKEN}"
-    engine = create_engine(DATABASE_URL)
+    # Crucial: secure=true enforces HTTPS over HTTP to prevent 308 Permanent Redirect from Turso
+    DATABASE_URL = f"sqlite+libsql://{turso_host}?authToken={TURSO_TOKEN}&secure=true"
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False, "secure": True}
+    )
 else:
     DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH.as_posix()}")
     engine_kwargs = {}
