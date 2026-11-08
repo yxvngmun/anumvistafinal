@@ -384,9 +384,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  updateTenantStatus: (
+    occupantId: number,
+    status: "occupied" | "vacant",
+  ): Promise<Occupant> =>
+    fetchJson<Occupant>(`/tenants/${occupantId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
   updateTenant: (
     occupantId: number,
-    payload: { name: string; contact?: string; cnic?: string },
+    payload: { name: string; contact?: string; cnic?: string; status?: "occupied" | "vacant" | string },
   ): Promise<Occupant> =>
     fetchJson<Occupant>(`/tenants/${occupantId}`, {
       method: "PATCH",

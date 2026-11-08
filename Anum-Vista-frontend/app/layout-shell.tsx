@@ -77,16 +77,16 @@ function Sidebar({
       href: "/tenants",
       label: "Residents",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
       ),
     },
     {
       href: "/car-maintenance",
-      label: "Residing and Parking",
+      label: "Cars and parking",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11M5 11v6a1 1 0 001 1h1m12-7v6a1 1 0 01-1 1h-1M5 11h14M7.5 14.5a1 1 0 100-2 1 1 0 000 2zm9 0a1 1 0 100-2 1 1 0 000 2z" />
         </svg>
       ),
@@ -98,7 +98,7 @@ function Sidebar({
       href: "/dashboard",
       label: "Overview",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <rect x="3" y="3" width="7" height="7" rx="1.5" />
           <rect x="14" y="3" width="7" height="7" rx="1.5" />
           <rect x="3" y="14" width="7" height="7" rx="1.5" />
@@ -110,7 +110,7 @@ function Sidebar({
       href: "/analytics",
       label: "Analytics",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 13l5-5 4 4 9-9m0 0h-6m6 0v6" />
         </svg>
       ),
@@ -119,7 +119,7 @@ function Sidebar({
       href: "/treasury",
       label: "Treasury",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
@@ -128,7 +128,7 @@ function Sidebar({
       href: "/audit-log",
       label: "Audit Trail",
       icon: (
-        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
@@ -156,10 +156,10 @@ function Sidebar({
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <h1 className="text-xs font-bold tracking-tight text-slate-900 dark:text-white uppercase truncate">
+                <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white uppercase truncate">
                   Anum Vista
                 </h1>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium truncate">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium truncate">
                   Finance Portal
                 </p>
               </div>
@@ -175,15 +175,15 @@ function Sidebar({
             }`}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
               <path strokeLinecap="round" strokeLinejoin="round" d={collapsed ? "M9 5l7 7-7 7" : "M15 19l-7-7 7-7"} />
             </svg>
           </button>
         </div>
 
         {/* Navigation list */}
-        <nav className="p-2 space-y-1 overflow-y-auto max-h-[calc(100vh-140px)]">
-          <ul className="space-y-0.5">
+        <nav className="p-2.5 space-y-1.5 overflow-y-auto max-h-[calc(100vh-140px)]">
+          <ul className="space-y-1">
             {navItems.map((item) => {
               const active = pathname === item.href;
               return (
@@ -191,7 +191,7 @@ function Sidebar({
                   <Link
                     href={item.href}
                     title={collapsed ? item.label : undefined}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-colors press-feedback ${
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors press-feedback ${
                       active
                         ? "bg-black text-white dark:bg-white dark:text-black shadow-sm font-semibold"
                         : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
@@ -210,31 +210,31 @@ function Sidebar({
                 type="button"
                 onClick={() => setExpensesOpen(!expensesOpen)}
                 title={collapsed ? "Transactions" : undefined}
-                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-colors press-feedback ${
+                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors press-feedback ${
                   pathname.startsWith("/transactions")
                     ? "bg-slate-100 text-black dark:bg-white/10 dark:text-white font-semibold"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
                 } ${collapsed ? "justify-center px-0" : ""}`}
               >
                 <div className="flex items-center gap-3">
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                   </svg>
                   {!collapsed && <span className="truncate">Transactions</span>}
                 </div>
                 {!collapsed && (
-                  <svg className={`w-3 h-3 text-slate-400 transition-transform ${expensesOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${expensesOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 )}
               </button>
               {expensesOpen && !collapsed && (
-                <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-0.5">
+                <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-1">
                   {isSuperAdmin && (
                     <li>
                       <Link
                         href="/transactions?tab=inflow"
-                        className={`block rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                        className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                           searchParams.get("tab") === "inflow" ||
                           (pathname === "/transactions" && !searchParams.get("tab"))
                             ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
@@ -248,7 +248,7 @@ function Sidebar({
                   <li>
                     <Link
                       href="/transactions?tab=outflow"
-                      className={`block rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                      className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                         searchParams.get("tab") === "outflow" ||
                         (!isSuperAdmin && pathname === "/transactions")
                           ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
@@ -268,7 +268,7 @@ function Sidebar({
                 type="button"
                 onClick={() => setReportsOpen(!reportsOpen)}
                 title={collapsed ? "Reports & Ledger" : undefined}
-                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-colors press-feedback ${
+                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors press-feedback ${
                   pathname.startsWith("/reports") ||
                   pathname.startsWith("/ledger") ||
                   pathname.startsWith("/reminders")
@@ -277,19 +277,19 @@ function Sidebar({
                 } ${collapsed ? "justify-center px-0" : ""}`}
               >
                 <div className="flex items-center gap-3">
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   {!collapsed && <span className="truncate">Reports & Ledger</span>}
                 </div>
                 {!collapsed && (
-                  <svg className={`w-3 h-3 text-slate-400 transition-transform ${reportsOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${reportsOpen ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 )}
               </button>
               {reportsOpen && !collapsed && (
-                <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-0.5">
+                <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-1">
                   {[
                     { href: "/reports/pending-dues", label: "Pending Dues" },
                     { href: "/reports/advance-payments", label: "Advance Payments" },
@@ -303,7 +303,7 @@ function Sidebar({
                     <li key={sub.href}>
                       <Link
                         href={sub.href}
-                        className={`block rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                        className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                           pathname === sub.href
                             ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
                             : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
@@ -331,21 +331,21 @@ function Sidebar({
             }`}
             title="Profile & Settings"
           >
-            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-white/15 text-slate-900 dark:text-white font-bold text-xs flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-white/15 text-slate-900 dark:text-white font-bold text-sm flex items-center justify-center shrink-0">
               {user?.username?.charAt(0).toUpperCase() || "U"}
             </div>
             {!collapsed && (
               <div className="min-w-0 text-left flex-1">
-                <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                   {user?.username}
                 </p>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 capitalize">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 capitalize">
                   {isSuperAdmin ? "Super Admin" : "Admin"}
                 </p>
               </div>
             )}
             {!collapsed && (
-              <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="12" r="1" />
                 <circle cx="12" cy="5" r="1" />
                 <circle cx="12" cy="19" r="1" />
@@ -358,10 +358,10 @@ function Sidebar({
 
         {/* Profile Dropdown Menu */}
         {profileOpen && (
-          <div className="absolute left-2 bottom-full mb-2 z-50 w-56 rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-[#0d131f] shadow-xl p-2 space-y-1 text-xs">
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/10">
+          <div className="absolute left-2 bottom-full mb-2 z-50 w-60 rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-[#0d131f] shadow-xl p-2 space-y-1 text-sm">
+            <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-white/10">
               <p className="font-semibold text-slate-900 dark:text-white truncate">{user?.username}</p>
-              <p className="text-[10px] text-slate-500 dark:text-zinc-400 capitalize">{user?.role?.replace("_", " ")}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 capitalize">{user?.role?.replace("_", " ")}</p>
             </div>
 
             {/* Dark Mode Sleek Toggle Switch */}
@@ -376,7 +376,7 @@ function Sidebar({
                   toggleTheme();
                 }
               }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none"
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none"
             >
               <span className="font-medium text-slate-800 dark:text-zinc-200">Dark Mode</span>
               <div
@@ -396,7 +396,7 @@ function Sidebar({
             <button
               type="button"
               onClick={logout}
-              className="w-full flex items-center px-3 py-2 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors font-medium"
+              className="w-full flex items-center px-3.5 py-2.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors font-semibold"
             >
               Sign out
             </button>

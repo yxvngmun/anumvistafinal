@@ -46,6 +46,7 @@ export default function TenantsPage() {
   const [editName, setEditName] = useState("");
   const [editContact, setEditContact] = useState("");
   const [editCnic, setEditCnic] = useState("");
+  const [editStatus, setEditStatus] = useState<"occupied" | "vacant">("occupied");
   const [isUpdating, setIsUpdating] = useState(false);
   const [treasurers, setTreasurers] = useState<string[]>(DEFAULT_TREASURERS);
   const [creditedTo, setCreditedTo] = useState(DEFAULT_TREASURERS[0]);
@@ -111,6 +112,7 @@ export default function TenantsPage() {
     setEditName(t.name || "");
     setEditContact(t.contact || t.phone || "");
     setEditCnic(t.cnic || "");
+    setEditStatus(((t.status || "occupied").toLowerCase() === "vacant") ? "vacant" : "occupied");
   };
 
   const handleSaveResident = async (e: React.FormEvent) => {
@@ -127,9 +129,10 @@ export default function TenantsPage() {
         name: trimmed,
         contact: editContact.trim() || undefined,
         cnic: editCnic.trim() || undefined,
+        status: editStatus,
       });
       qc.invalidateQueries({ queryKey: ["tenants"] });
-      setToast({ type: "success", message: `Updated resident name for Flat ${editingTenant.unit.unit_no} to "${trimmed}"` });
+      setToast({ type: "success", message: `Updated Flat ${editingTenant.unit.unit_no} (${trimmed} · ${editStatus})` });
       setEditingTenant(null);
       setTimeout(() => setToast(null), 3500);
     } catch (err) {
@@ -226,21 +229,21 @@ export default function TenantsPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
             Residents & Apartments
           </h2>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-            Directory of all building units, residents, and monthly maintenance collections
+          <p className="text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
+            Directory of all building units, occupancy status, and monthly maintenance collections
           </p>
         </div>
-        <div className="text-xs text-slate-500 dark:text-zinc-400 font-mono">
+        <div className="text-sm text-slate-500 dark:text-zinc-400 font-mono">
           Total: <span className="font-bold text-slate-900 dark:text-white">{tenants.length}</span> units
         </div>
       </div>
 
       {toast && (
         <div
-          className={`rounded-xl px-4 py-3 text-xs font-medium border flex items-center justify-between ${
+          className={`rounded-xl px-4 py-3 text-sm font-medium border flex items-center justify-between ${
             toast.type === "success"
               ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300"
               : "bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300"
@@ -252,14 +255,14 @@ export default function TenantsPage() {
       )}
 
       {/* Control Bar: Search & Status Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] shadow-sm">
         <div className="relative flex-1 max-w-sm">
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search flat #, name, or phone..."
-            className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:border-black dark:focus:border-white transition-colors"
+            className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none focus:border-black dark:focus:border-white transition-colors"
           />
         </div>
 
@@ -269,7 +272,7 @@ export default function TenantsPage() {
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
-              className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors press-feedback ${
+              className={`rounded-md px-3.5 py-1.5 text-sm font-bold transition-colors press-feedback ${
                 statusFilter === s
                   ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
                   : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
@@ -284,77 +287,103 @@ export default function TenantsPage() {
       {/* Table */}
       <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] bg-slate-50 dark:bg-white/[0.02]">
-                <th className="py-3 px-4">Flat #</th>
-                <th className="py-3 px-4">Resident</th>
-                <th className="py-3 px-4">Contact</th>
-                <th className="py-3 px-4 text-right">Base Fee</th>
-                <th className="py-3 px-4 text-right">Cars (Fee)</th>
-                <th className="py-3 px-4 text-right">Total Fee</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Expected Dues</th>
-                <th className="py-3 px-4 text-right">Action</th>
+              <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-zinc-400 font-bold uppercase text-xs bg-slate-50 dark:bg-white/[0.02]">
+                <th className="py-3.5 px-4">Flat #</th>
+                <th className="py-3.5 px-4">Resident</th>
+                <th className="py-3.5 px-4 text-center">Occupancy</th>
+                <th className="py-3.5 px-4">Contact</th>
+                <th className="py-3.5 px-4 text-right">Base Fee</th>
+                <th className="py-3.5 px-4 text-right">Cars (Fee)</th>
+                <th className="py-3.5 px-4 text-right">Total Fee</th>
+                <th className="py-3.5 px-4 text-center">Payment</th>
+                <th className="py-3.5 px-4 text-right">Expected Dues</th>
+                <th className="py-3.5 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04]">
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={9} className="py-4 px-4"><div className="h-5 bg-slate-200 dark:bg-white/[0.03] rounded" /></td>
+                    <td colSpan={10} className="py-5 px-4"><div className="h-6 bg-slate-200 dark:bg-white/[0.03] rounded" /></td>
                   </tr>
                 ))
               ) : filteredTenants.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400 dark:text-zinc-500">
+                  <td colSpan={10} className="py-8 text-center text-slate-400 dark:text-zinc-500">
                     No residents matching current criteria.
                   </td>
                 </tr>
               ) : (
                 filteredTenants.map((t, idx) => {
                   const status = computeStatus(t);
+                  const isVacant = (t.status || "").toLowerCase() === "vacant";
                   return (
                     <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">{t.unit.unit_no}</td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-4 px-4 font-mono font-bold text-slate-900 dark:text-white text-base">{t.unit.unit_no}</td>
+                      <td className="py-4 px-4">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-slate-900 dark:text-zinc-100">{t.name}</span>
+                          <span className="font-semibold text-slate-900 dark:text-zinc-100 text-sm">{t.name}</span>
                           {isSuperAdmin && (
                             <button
                               type="button"
                               onClick={() => openEditModal(t)}
-                              title="Edit resident name (Super Admin only)"
+                              title="Edit resident (Super Admin only)"
                               className="p-1 rounded text-slate-400 hover:text-black dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
                             >
-                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                               </svg>
                             </button>
                           )}
                         </div>
                         {t.unit.is_rental && (
-                          <span className="text-[10px] text-slate-500 dark:text-zinc-400">Tenant (Rental)</span>
-                        )}
-                        {(t.status || "").toLowerCase() === "vacant" && (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-500/20">
-                            Vacant
-                          </span>
+                          <span className="text-xs text-slate-500 dark:text-zinc-400 block mt-0.5">Tenant (Rental)</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600 dark:text-zinc-300 font-mono">{t.contact || t.phone || "—"}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-800 dark:text-zinc-200">
+
+                      {/* Vacancy / Occupancy Status Selector */}
+                      <td className="py-4 px-4 text-center">
+                        <select
+                          value={isVacant ? "vacant" : "occupied"}
+                          onChange={async (e) => {
+                            const nextStatus = e.target.value as "occupied" | "vacant";
+                            try {
+                              await api.updateTenantStatus(t.id, nextStatus);
+                              qc.invalidateQueries({ queryKey: ["tenants"] });
+                              setToast({
+                                type: "success",
+                                message: `Unit ${t.unit.unit_no} set to ${nextStatus === "vacant" ? "Vacant (₨ 4,000 base)" : "Occupied (₨ 5,500 base)"}`,
+                              });
+                            } catch (err) {
+                              setToast({ type: "error", message: (err as Error).message });
+                            }
+                          }}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-bold border outline-none cursor-pointer transition-colors ${
+                            isVacant
+                              ? "bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300"
+                              : "bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300"
+                          }`}
+                        >
+                          <option value="occupied">Occupied</option>
+                          <option value="vacant">Vacant</option>
+                        </select>
+                      </td>
+
+                      <td className="py-4 px-4 text-slate-600 dark:text-zinc-300 font-mono text-sm">{t.contact || t.phone || "—"}</td>
+                      <td className="py-4 px-4 text-right font-mono text-slate-800 dark:text-zinc-200 text-sm">
                         {fmt(t.monthly_maintenance_fee)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-500 dark:text-zinc-400">
+                      <td className="py-4 px-4 text-right font-mono text-slate-500 dark:text-zinc-400 text-sm">
                         {t.car_count || 1} {(t.car_count || 1) === 1 ? "car" : "cars"} ({fmt(t.extra_car_charges || 0)})
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
+                      <td className="py-4 px-4 text-right font-mono font-bold text-slate-900 dark:text-white text-sm">
                         {fmt(t.total_monthly_maintenance != null ? t.total_monthly_maintenance : Number(t.monthly_maintenance_fee || 0) + Number(t.extra_car_charges || 0))}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-4 px-4 text-center">
                         <span
-                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold border ${
                             status === "Settled"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
                               : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20"
@@ -363,15 +392,15 @@ export default function TenantsPage() {
                           {status}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold">
+                      <td className="py-4 px-4 text-right font-mono font-bold text-sm">
                         <span className={status === "Overdue" ? "text-rose-600 dark:text-rose-400" : "text-slate-500 dark:text-zinc-400"}>
                           {fmt(t.expected_dues)}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-4 px-4 text-right">
                         <button
                           onClick={() => setSelectedTenant(t)}
-                          className="rounded-lg bg-slate-100 hover:bg-black hover:text-white text-slate-800 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white dark:hover:text-black px-3 py-1.5 text-xs font-bold transition-colors press-feedback"
+                          className="rounded-lg bg-slate-100 hover:bg-black hover:text-white text-slate-800 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white dark:hover:text-black px-3.5 py-1.5 text-sm font-bold transition-colors press-feedback"
                         >
                           Collect
                         </button>
@@ -391,9 +420,9 @@ export default function TenantsPage() {
           <div className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Log Maintenance Inflow</h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Flat {selectedTenant.unit.unit_no} · {selectedTenant.name}
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Log Maintenance Inflow</h3>
+                <p className="text-sm text-slate-500 dark:text-zinc-400">
+                  Flat {selectedTenant.unit.unit_no} · {selectedTenant.name} ({((selectedTenant.status || "occupied").toLowerCase() === "vacant") ? "Vacant · ₨ 4,000 base" : "Occupied · ₨ 5,500 base"})
                 </p>
               </div>
               <button
@@ -409,7 +438,7 @@ export default function TenantsPage() {
               <button
                 type="button"
                 onClick={() => setAutoAllocateMode(false)}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${
                   !autoAllocateMode
                     ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
                     : "text-slate-600 dark:text-zinc-400"
@@ -420,7 +449,7 @@ export default function TenantsPage() {
               <button
                 type="button"
                 onClick={() => setAutoAllocateMode(true)}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${
                   autoAllocateMode
                     ? "bg-black text-white dark:bg-white dark:text-black shadow-sm"
                     : "text-slate-600 dark:text-zinc-400"
@@ -433,7 +462,7 @@ export default function TenantsPage() {
             {autoAllocateMode ? (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
                     Received Amount (PKR)
                   </label>
                   <div className="flex gap-2">
@@ -442,12 +471,12 @@ export default function TenantsPage() {
                       value={autoAmount}
                       onChange={(e) => setAutoAmount(e.target.value)}
                       placeholder="e.g. 15000"
-                      className="flex-1 rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                      className="flex-1 rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
                     />
                     <button
                       type="button"
                       onClick={handleAutoPreview}
-                      className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/[0.08] px-3.5 py-2 text-xs font-bold text-slate-800 dark:text-white hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
+                      className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/[0.08] px-4 py-2 text-sm font-bold text-slate-800 dark:text-white hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
                     >
                       Preview
                     </button>
@@ -455,7 +484,7 @@ export default function TenantsPage() {
                 </div>
 
                 {autoResult && (
-                  <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] p-3 text-xs space-y-1">
+                  <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] p-3.5 text-sm space-y-1">
                     <p className="font-bold text-slate-900 dark:text-white">Auto Allocation Summary:</p>
                     <p className="text-slate-600 dark:text-zinc-400">
                       Covers: <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{autoResult.months_count} month(s)</span> (₨{autoResult.total_applied})
@@ -469,16 +498,16 @@ export default function TenantsPage() {
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
-                    Unpaid Months
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+                    Select Months (Month & Year)
                   </label>
-                  <span className="text-[10px] text-slate-500 dark:text-zinc-400">
-                    Earliest dues cleared first
+                  <span className="text-xs text-slate-500 dark:text-zinc-400">
+                    Sequential selection from earliest due
                   </span>
                 </div>
-                <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 space-y-1">
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 space-y-1">
                   {unpaidMonths.length === 0 ? (
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 p-2">No past unpaid months recorded. Advance payment can be logged.</p>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400 p-2">No past unpaid months recorded. Advance payment can be logged.</p>
                   ) : (
                     unpaidMonths.map((m, idx) => {
                       const checked = selectedMonths.has(m.month_key);
@@ -486,25 +515,31 @@ export default function TenantsPage() {
                         <div
                           key={m.month_key}
                           onClick={() => handleToggleMonth(idx)}
-                          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                          className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors ${
                             checked
                               ? "bg-emerald-50/80 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30"
                               : "hover:bg-slate-100 dark:hover:bg-white/[0.04] border border-transparent"
                           }`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
                               {m.label || formatMonthDisplay(m.month_key)}
                             </span>
-                            <span className="text-[9px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-500/20">
-                              Due
-                            </span>
+                            {m.is_due ? (
+                              <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-500/20">
+                                Due
+                              </span>
+                            ) : (
+                              <span className="text-xs font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded border border-sky-200 dark:border-sky-500/20">
+                                Advance
+                              </span>
+                            )}
                           </div>
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => handleToggleMonth(idx)}
-                            className="rounded border-slate-300 text-black focus:ring-0 cursor-pointer"
+                            className="w-4 h-4 rounded border-slate-300 text-black focus:ring-0 cursor-pointer"
                           />
                         </div>
                       );
@@ -512,11 +547,11 @@ export default function TenantsPage() {
                   )}
                 </div>
                 {selectedMonths.size > 0 && (
-                  <div className="rounded-lg bg-slate-100 dark:bg-white/[0.04] p-2 text-xs flex items-center justify-between">
-                    <span className="text-slate-600 dark:text-zinc-400 text-[11px]">
+                  <div className="rounded-lg bg-slate-100 dark:bg-white/[0.04] p-3 text-sm flex items-center justify-between">
+                    <span className="text-slate-600 dark:text-zinc-400 font-medium">
                       Selected ({selectedMonths.size} mo):
                     </span>
-                    <span className="font-semibold text-slate-900 dark:text-white text-right truncate max-w-[240px] text-[11px]">
+                    <span className="font-semibold text-slate-900 dark:text-white text-right truncate max-w-[280px]">
                       {Array.from(selectedMonths).sort().map(formatMonthDisplay).join(", ")}
                     </span>
                   </div>
@@ -527,13 +562,13 @@ export default function TenantsPage() {
             {/* Common Fields */}
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
                   Treasurer / Custodian
                 </label>
                 <select
                   value={creditedTo}
                   onChange={(e) => setCreditedTo(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   {treasurers.map((tr) => (
                     <option key={tr} value={tr}>{tr}</option>
@@ -541,13 +576,13 @@ export default function TenantsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
                   Payment Mode
                 </label>
                 <select
                   value={paymentMode}
                   onChange={(e) => setPaymentMode(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   <option value="cash">Cash in hand</option>
                   <option value="bank_transfer">Bank Transfer</option>
@@ -559,11 +594,11 @@ export default function TenantsPage() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/10">
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-white/10">
               <button
                 type="button"
                 onClick={() => setSelectedTenant(null)}
-                className="rounded-lg border border-slate-300 dark:border-white/10 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+                className="rounded-lg border border-slate-300 dark:border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -571,7 +606,7 @@ export default function TenantsPage() {
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleSubmitPayment}
-                className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-5 py-2 text-xs font-bold transition-colors press-feedback disabled:opacity-50"
+                className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-5 py-2.5 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
               >
                 {isSubmitting ? "Processing..." : "Confirm & Save"}
               </button>
@@ -580,17 +615,17 @@ export default function TenantsPage() {
         </div>
       )}
 
-      {/* Edit Resident Name Modal (Super Admin only) */}
+      {/* Edit Resident Modal (Super Admin only) */}
       {isSuperAdmin && editingTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Edit Resident — Flat {editingTenant.unit.unit_no}
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Update resident identity. Super Admin exclusive.
+                <p className="text-sm text-slate-500 dark:text-zinc-400">
+                  Update resident identity and occupancy status.
                 </p>
               </div>
               <button
@@ -603,7 +638,7 @@ export default function TenantsPage() {
 
             <form onSubmit={handleSaveResident} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-800 dark:text-zinc-200 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
                   Resident Name <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -612,13 +647,27 @@ export default function TenantsPage() {
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="e.g. Mr. Kashif Shamim"
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-800 dark:text-zinc-200 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
+                  Apartment Status
+                </label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as "occupied" | "vacant")}
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white font-semibold"
+                >
+                  <option value="occupied">Occupied (₨ 5,500 base maintenance)</option>
+                  <option value="vacant">Vacant (₨ 4,000 base maintenance)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
                   Phone / WhatsApp (Optional)
                 </label>
                 <input
@@ -626,12 +675,12 @@ export default function TenantsPage() {
                   value={editContact}
                   onChange={(e) => setEditContact(e.target.value)}
                   placeholder="e.g. 0300-1234567"
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-800 dark:text-zinc-200 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
                   CNIC (Optional)
                 </label>
                 <input
@@ -639,22 +688,22 @@ export default function TenantsPage() {
                   value={editCnic}
                   onChange={(e) => setEditCnic(e.target.value)}
                   placeholder="e.g. 42101-1234567-1"
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/10">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-white/10">
                 <button
                   type="button"
                   onClick={() => setEditingTenant(null)}
-                  className="rounded-lg border border-slate-300 dark:border-white/10 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+                  className="rounded-lg border border-slate-300 dark:border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isUpdating}
-                  className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-5 py-2 text-xs font-bold transition-colors press-feedback disabled:opacity-50"
+                  className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-5 py-2.5 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
                 >
                   {isUpdating ? "Saving..." : "Save Changes"}
                 </button>

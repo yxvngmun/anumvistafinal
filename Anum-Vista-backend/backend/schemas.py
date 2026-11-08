@@ -176,6 +176,10 @@ class OutstandingMaintenanceSnapshotOut(BaseModel):
         from_attributes = True
 
 
+class OccupantStatusUpdate(BaseModel):
+    status: str
+
+
 class OccupantCarUpdate(BaseModel):
     car_count: int
     extra_car_maintenance_fee: Decimal = Decimal('2000.00')
@@ -186,6 +190,7 @@ class OccupantUpdate(BaseModel):
     name: str
     contact: Optional[str] = None
     cnic: Optional[str] = None
+    status: Optional[str] = None
 
 
 class ExpenseDescriptionOut(BaseModel):

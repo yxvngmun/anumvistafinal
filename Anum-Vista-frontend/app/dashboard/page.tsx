@@ -130,23 +130,23 @@ export default function DashboardPage() {
       {/* Top Banner / Heading */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
             Overview Dashboard
           </h2>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-zinc-400 mt-1">
             Real-time financial status, building performance, and collections
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => router.push("/transactions?tab=outflow")}
-            className="rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors press-feedback"
+            className="rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors press-feedback"
           >
             Log Outflow
           </button>
           <button
             onClick={() => router.push("/tenants")}
-            className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-3.5 py-1.5 text-xs font-bold transition-colors press-feedback shadow-sm"
+            className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-4 py-2 text-sm font-bold transition-colors press-feedback shadow-sm"
           >
             Collect Inflow
           </button>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {metricsLoading
           ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-24 rounded-xl bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 animate-pulse" />
+              <div key={i} className="h-28 rounded-xl bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/10 animate-pulse" />
             ))
           : cards.map((c, i) => (
               <div
@@ -173,13 +173,13 @@ export default function DashboardPage() {
                     : "bg-white dark:bg-[#0d131f] border-slate-200 dark:border-white/10 text-slate-900 dark:text-white"
                 }`}
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 truncate">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 truncate">
                   {c.title}
                 </p>
-                <p className="mt-2 text-lg sm:text-xl font-bold font-mono tabular-nums tracking-tight truncate">
+                <p className="mt-2 text-xl sm:text-2xl font-bold font-mono tabular-nums tracking-tight truncate">
                   {c.value}
                 </p>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-0.5 truncate">{c.subtitle}</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 truncate">{c.subtitle}</p>
               </div>
             ))}
       </div>

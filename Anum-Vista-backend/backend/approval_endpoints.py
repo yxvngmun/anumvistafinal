@@ -1,10 +1,10 @@
 """approval_endpoints.py — All new governance endpoints (auth, approval, notifications, audit, dues-first receipts)"""
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 import json
 
@@ -81,6 +81,14 @@ def _get_unpaid_months(occupant):
             cursor = date(cursor.year + 1, 1, 1)
         else:
             cursor = date(cursor.year, cursor.month + 1, 1)
+    # If resident is all caught up, provide next 3 upcoming months for advance payments
+    if not months:
+        for _ in range(3):
+            months.append(cursor)
+            if cursor.month == 12:
+                cursor = date(cursor.year + 1, 1, 1)
+            else:
+                cursor = date(cursor.year, cursor.month + 1, 1)
     return months
 
 # ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -400,17 +408,23 @@ def get_audit_logs(db: Session = Depends(get_db), user: models.User = Depends(re
 @router.get("/api/tenants/{occupant_id}/unpaid-months", response_model=schemas.UnpaidMonthsOut)
 def get_unpaid_months(occupant_id: int, db: Session = Depends(get_db),
                       user: models.User = Depends(get_current_user)):
-    occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
+    occupant = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     unpaid = _get_unpaid_months(occupant)
     month_names = ["", "January", "February", "March", "April", "May", "June",
                    "July", "August", "September", "October", "November", "December"]
+    now = datetime.now()
     result = []
     for d in unpaid:
         key = f"{d.year}-{d.month:02d}"
-        result.append(schemas.UnpaidMonth(month_key=key, label=f"{month_names[d.month]} {d.year}",
-                                          year=d.year, is_due=True))
+        is_due = (d.year < now.year) or (d.year == now.year and d.month <= now.month)
+        result.append(schemas.UnpaidMonth(
+            month_key=key,
+            label=f"{month_names[d.month]} {d.year}",
+            year=d.year,
+            is_due=is_due,
+        ))
     return schemas.UnpaidMonthsOut(months=result)
 
 # ─── DUES-FIRST MULTI-MONTH RECEIPT ──────────────────────────────────────────
@@ -763,6 +777,8 @@ def _fmt_date(dt) -> str:
             dt = datetime.fromisoformat(dt)
         except Exception:
             return dt
+    if getattr(dt, "tzinfo", None) is None:
+        dt = dt + timedelta(hours=5)
     return dt.strftime("%d %b %Y, %I:%M %p")
 
 
@@ -811,7 +827,7 @@ def get_receipt_pdf(
             occupant_name = occupant.name
             unit_no = occupant.unit.unit_no if occupant.unit else "—"
 
-    ref = txn.receipt_no or f"TXN-{txn.id}"
+    clean_ref = str(txn.receipt_no or f"TXN-{txn.id}").strip()
     status_label = txn.status.value.upper() if hasattr(txn.status, "value") else str(txn.status).upper()
     approved_by_name = ""
     if txn.approved_by_user_id:
@@ -835,7 +851,7 @@ def get_receipt_pdf(
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Receipt {ref}</title>
+<title>Anum Vista Maintenance Receipt</title>
 <style>
   @page {{ size: A4; margin: 18mm; }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -873,8 +889,8 @@ def get_receipt_pdf(
       <p class="subtitle">Property Management — Maintenance Receipt</p>
     </div>
     <div class="receipt-ref">
-      <div class="label">Receipt Number</div>
-      <div class="value">{ref}</div>
+      <div class="label">Receipt #</div>
+      <div class="value">{clean_ref}</div>
       <div style="margin-top:8px;">
         <div class="label">Date & Time</div>
         <div class="value" style="font-size:12px;">{_fmt_date(txn.created_at or txn.date)}</div>
@@ -942,7 +958,7 @@ def get_receipt_pdf(
 
   <div class="footer">
     <div>Anum Vista Property Management System</div>
-    <div>Generated on {datetime.now().strftime('%d %b %Y, %I:%M %p')}</div>
+    <div>Official Verified Record</div>
   </div>
 </body>
 </html>"""
