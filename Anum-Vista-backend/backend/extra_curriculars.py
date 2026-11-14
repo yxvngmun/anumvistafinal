@@ -258,9 +258,21 @@ def seed_extra_curriculars(db: Session) -> None:
         .filter(models.Transaction.receipt_no.like("EXCEL-EC-%"))
         .delete(synchronize_session=False)
     )
+    sep_excel_exp_deleted = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.type == models.TransactionType.OUTFLOW,
+            models.Transaction.receipt_no.is_(None),
+            models.Transaction.generated_by == "System",
+        )
+        .delete(synchronize_session=False)
+    )
     db.commit()
-    if ec_deleted or exp_deleted:
-        print(f"Undid {ec_deleted} Excel/PDF extra curricular txns and {exp_deleted} Oct 2026 expense txns.")
+    if ec_deleted or exp_deleted or sep_excel_exp_deleted:
+        print(
+            f"Undid {ec_deleted} Excel/PDF extra curricular txns, "
+            f"{exp_deleted} Oct 2026 expense txns, and {sep_excel_exp_deleted} Sep 2026 Excel expense txns."
+        )
 
 
 def _slug_code(name: str) -> str:
