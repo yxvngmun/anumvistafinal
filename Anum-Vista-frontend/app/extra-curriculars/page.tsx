@@ -48,7 +48,7 @@ export default function ExtraCurricularsPage() {
   const isSuperAdmin = user?.role === "super_admin";
   const isSeniorAdmin = user?.role === "senior_admin";
   const isMaster = ["superadmin", "anumvista"].includes((user?.username || "").toLowerCase());
-  const canCollectAdvert = isSeniorAdmin || isMaster;
+  const canCollectAdvert = isSuperAdmin || isSeniorAdmin || isMaster;
   const canCollectHallAndOther = isSuperAdmin || isMaster;
   const qc = useQueryClient();
 
@@ -380,7 +380,7 @@ export default function ExtraCurricularsPage() {
                 coreRowSources.map((src) => {
                   const isAdv = src.source_type === "advert";
                   const canCollectRow = isAdv ? canCollectAdvert : canCollectHallAndOther;
-                  const canEditRow = isAdv && (isSeniorAdmin || isMaster);
+                  const canEditRow = isAdv && (isSuperAdmin || isSeniorAdmin || isMaster);
                   return (
                     <tr key={src.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.02]">
                       <td className="py-3.5 px-4">

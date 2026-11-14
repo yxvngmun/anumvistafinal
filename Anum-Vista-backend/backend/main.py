@@ -494,9 +494,10 @@ def create_transaction(
     payload = transaction.model_dump()
     uname = (user.username or "").lower()
     if payload.get("type") == models.TransactionType.OUTFLOW:
-        if user.role != models.UserRole.senior_admin and uname not in ("dilshad", "superadmin", "anumvista"):
-            raise HTTPException(status_code=403, detail="Only Dilshad can add expenses.")
-        payload["credited_to"] = "Dilshad"
+        if user.role not in (models.UserRole.senior_admin, models.UserRole.super_admin) and uname not in ("dilshad", "naveed", "superadmin", "anumvista"):
+            raise HTTPException(status_code=403, detail="Only Dilshad or Naveed can add expenses.")
+        if not payload.get("credited_to"):
+            payload["credited_to"] = "Naveed" if uname == "naveed" else "Dilshad"
     elif payload.get("type") == models.TransactionType.TRANSFER:
         if user.role not in (models.UserRole.super_admin, models.UserRole.senior_admin):
             raise HTTPException(status_code=403, detail="Only Super Admin or Senior Admin can record internal transfers.")

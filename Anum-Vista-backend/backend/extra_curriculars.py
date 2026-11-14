@@ -360,8 +360,8 @@ def update_extra_curricular_source(
         raise HTTPException(status_code=404, detail="Extra curricular source not found")
     uname = (user.username or "").lower()
     if uname not in ("superadmin", "anumvista"):
-        if src.source_type == "advert" and user.role != models.UserRole.senior_admin and uname != "dilshad":
-            raise HTTPException(status_code=403, detail="Only Dilshad can edit Advert targets.")
+        if src.source_type == "advert" and user.role not in (models.UserRole.senior_admin, models.UserRole.super_admin) and uname not in ("dilshad", "naveed"):
+            raise HTTPException(status_code=403, detail="Only Dilshad or Naveed can edit Advert targets.")
         if src.source_type != "advert" and user.role != models.UserRole.super_admin and uname != "naveed":
             raise HTTPException(status_code=403, detail="Only Naveed can edit non-advert extra curricular sources.")
 
@@ -448,8 +448,8 @@ def collect_extra_curricular(
 
     uname = (user.username or "").lower()
     if src.source_type == "advert":
-        if uname not in ("dilshad", "superadmin", "anumvista") and user.role != models.UserRole.senior_admin:
-            raise HTTPException(status_code=403, detail="Only Dilshad can collect Advert payments.")
+        if uname not in ("dilshad", "naveed", "superadmin", "anumvista") and user.role not in (models.UserRole.senior_admin, models.UserRole.super_admin):
+            raise HTTPException(status_code=403, detail="Only Dilshad or Naveed can collect Advert payments.")
         if payload.credited_to != "Dilshad":
             raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
     else:

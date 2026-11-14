@@ -353,8 +353,8 @@ def _can_approve_txn(user: models.User, txn: models.Transaction) -> Optional[str
     if uname in ("superadmin", "anumvista"):
         return None
     if txn.type == models.TransactionType.OUTFLOW:
-        if user.role != models.UserRole.senior_admin and uname != "dilshad":
-            return "Outflow expense approvals are handled only by Dilshad."
+        if user.role not in (models.UserRole.senior_admin, models.UserRole.super_admin) and uname not in ("dilshad", "naveed"):
+            return "Outflow expense approvals are handled only by Dilshad or Naveed."
         return None
     if txn.type == models.TransactionType.INFLOW and txn.category == models.TransactionCategory.maintenance:
         if user.role != models.UserRole.super_admin and uname != "naveed":

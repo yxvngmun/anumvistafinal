@@ -122,7 +122,7 @@ function TransactionsContent() {
         return tx.type === "OUTFLOW" || tx.category === "ad_revenue" || tx.credited_to === "Dilshad";
       }
       if (isSuperAdmin) {
-        return tx.type !== "OUTFLOW" && tx.credited_to !== "Dilshad";
+        return tx.type === "OUTFLOW" || tx.credited_to !== "Dilshad";
       }
       return false;
     });
@@ -274,32 +274,18 @@ function TransactionsContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentTab === "outflow" && (isDilshad || isMaster) && (
+          {currentTab === "outflow" && isManagement && (
             <button
               onClick={() => {
                 resetForm();
                 setType("OUTFLOW");
-                setCreditedTo("Dilshad");
+                setCreditedTo(isDilshad ? "Dilshad" : "Naveed");
                 setDate(new Date().toISOString().split("T")[0]);
                 setCreateOpen(true);
               }}
               className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-3.5 py-1.5 text-xs font-bold transition-colors press-feedback shadow-sm"
             >
               + New Expense
-            </button>
-          )}
-          {currentTab === "outflow" && isSuperAdmin && !isDilshad && !isMaster && (
-            <button
-              onClick={() => {
-                resetForm();
-                setType("TRANSFER");
-                setCategory("other");
-                setDate(new Date().toISOString().split("T")[0]);
-                setCreateOpen(true);
-              }}
-              className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-3.5 py-1.5 text-xs font-bold transition-colors press-feedback shadow-sm"
-            >
-              + Internal Transfer
             </button>
           )}
         </div>
@@ -589,7 +575,7 @@ function TransactionsContent() {
                     }}
                     className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
                   >
-                    {(isDilshad || isMaster) && <option value="OUTFLOW">Expense (Outflow)</option>}
+                    {(isManagement || isMaster) && <option value="OUTFLOW">Expense (Outflow)</option>}
                     <option value="TRANSFER">Internal Transfer</option>
                   </select>
                 </div>
@@ -638,12 +624,24 @@ function TransactionsContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Disbursed By</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value="Dilshad (Expense Recorder)"
-                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 outline-none cursor-not-allowed"
-                    />
+                    {isSuperAdmin ? (
+                      <select
+                        required
+                        value={creditedTo || "Naveed"}
+                        onChange={(e) => setCreditedTo(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                      >
+                        <option value="Naveed">Naveed</option>
+                        <option value="Dilshad">Dilshad</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        readOnly
+                        value="Dilshad (Expense Recorder)"
+                        className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 outline-none cursor-not-allowed"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Payment Mode</label>
