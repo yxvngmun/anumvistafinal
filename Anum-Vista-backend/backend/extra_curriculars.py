@@ -1,9 +1,10 @@
 """extra_curriculars.py — Extra Curriculars (Community Hall, Advert 1-4, Others) & Excel historical seed."""
-from datetime import datetime
+from datetime import datetime, date as date_cls
 from decimal import Decimal
 import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 try:
@@ -215,8 +216,50 @@ OCT_2026_EXPENSES = [
 ]
 
 
+def _ensure_financial_reset_v1(db: Session) -> None:
+    """One-time clean financial reset: zero out all inflows, outflows, treasury, and logs while retaining units & occupants."""
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS system_migration_flags ("
+            "flag VARCHAR PRIMARY KEY, applied_at DATETIME)"
+        )
+    )
+    already = db.execute(
+        text("SELECT 1 FROM system_migration_flags WHERE flag = 'clean_financial_reset_v1'")
+    ).first()
+    if already:
+        return
+
+    db.query(models.Notification).delete(synchronize_session=False)
+    db.query(models.AuditLog).delete(synchronize_session=False)
+    db.query(models.Transaction).delete(synchronize_session=False)
+    db.query(models.FundsInHandEntry).delete(synchronize_session=False)
+    db.query(models.FundsPositionEntry).delete(synchronize_session=False)
+    db.query(models.OutstandingMaintenanceSnapshot).delete(synchronize_session=False)
+
+    now_period = date_cls(datetime.now().year, datetime.now().month, 1)
+    for person in ("Naveed", "Asif", "Dilshad", "Ali", "Danish"):
+        db.add(models.FundsInHandEntry(period=now_period, person=person, amount=Decimal("0.00")))
+
+    db.execute(
+        text("INSERT INTO system_migration_flags (flag, applied_at) VALUES ('clean_financial_reset_v1', :ts)"),
+        {"ts": datetime.utcnow()},
+    )
+    db.commit()
+    print("Applied one-time clean financial reset (retained units & occupants).")
+
+
 def seed_extra_curriculars(db: Session) -> None:
-    """Idempotently seed ExtraCurricularSource rows and historical Excel receipts."""
+    """Idempotently run one-time clean financial reset and ensure ExtraCurricularSource rows."""
+    _ensure_financial_reset_v1(db)
+
+    shop_src = db.query(models.ExtraCurricularSource).filter(
+        models.ExtraCurricularSource.code == "other_shop_maint_a",
+        models.ExtraCurricularSource.name == "Shop Maintenance (A)",
+    ).first()
+    if shop_src:
+        shop_src.name = "Shop Rental"
+
     source_map: dict[str, models.ExtraCurricularSource] = {}
     for cfg in DEFAULT_SOURCES:
         existing = db.query(models.ExtraCurricularSource).filter(
@@ -227,52 +270,7 @@ def seed_extra_curriculars(db: Session) -> None:
             db.add(existing)
             db.flush()
         source_map[cfg["code"]] = existing
-
-    # Undo previously imported Sep 2026 Excel (EXCEL-EC-*) & Oct 2026 PDF (EXCEL-EXP-2026-10-*) records
-    exp_deleted = (
-        db.query(models.Transaction)
-        .filter(models.Transaction.receipt_no.like("EXCEL-EXP-2026-10-%"))
-        .delete(synchronize_session=False)
-    )
-    if exp_deleted > 0:
-        from datetime import date as date_cls
-        sep_dilshad = db.query(models.FundsInHandEntry).filter(
-            models.FundsInHandEntry.period == date_cls(2026, 9, 1),
-            models.FundsInHandEntry.person == "Dilshad",
-        ).first()
-        oct_dilshad = db.query(models.FundsInHandEntry).filter(
-            models.FundsInHandEntry.period == date_cls(2026, 10, 1),
-            models.FundsInHandEntry.person == "Dilshad",
-        ).first()
-        if oct_dilshad and sep_dilshad:
-            oct_dilshad.amount = sep_dilshad.amount
-        nov_dilshad = db.query(models.FundsInHandEntry).filter(
-            models.FundsInHandEntry.period == date_cls(2026, 11, 1),
-            models.FundsInHandEntry.person == "Dilshad",
-        ).first()
-        if nov_dilshad:
-            nov_dilshad.amount = nov_dilshad.amount + Decimal("148394.00")
-
-    ec_deleted = (
-        db.query(models.Transaction)
-        .filter(models.Transaction.receipt_no.like("EXCEL-EC-%"))
-        .delete(synchronize_session=False)
-    )
-    sep_excel_exp_deleted = (
-        db.query(models.Transaction)
-        .filter(
-            models.Transaction.type == models.TransactionType.OUTFLOW,
-            models.Transaction.receipt_no.is_(None),
-            models.Transaction.generated_by == "System",
-        )
-        .delete(synchronize_session=False)
-    )
     db.commit()
-    if ec_deleted or exp_deleted or sep_excel_exp_deleted:
-        print(
-            f"Undid {ec_deleted} Excel/PDF extra curricular txns, "
-            f"{exp_deleted} Oct 2026 expense txns, and {sep_excel_exp_deleted} Sep 2026 Excel expense txns."
-        )
 
 
 def _slug_code(name: str) -> str:
