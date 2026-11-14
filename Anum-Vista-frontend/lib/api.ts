@@ -442,7 +442,6 @@ export const api = {
       contact?: string;
       cnic?: string;
       status?: "occupied" | "vacant" | string;
-      monthly_maintenance_fee?: string;
       is_rental?: boolean;
       tenant_name?: string;
       tenant_contact?: string;
@@ -450,6 +449,18 @@ export const api = {
     },
   ): Promise<Occupant> =>
     fetchJson<Occupant>(`/tenants/${occupantId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  getBaseFees: (): Promise<{ occupied_fee: string; vacant_fee: string }> =>
+    fetchJson<{ occupied_fee: string; vacant_fee: string }>("/settings/base-fee"),
+
+  updateBaseFees: (payload: {
+    occupied_fee: string;
+    vacant_fee: string;
+  }): Promise<{ occupied_fee: string; vacant_fee: string; updated_units: number }> =>
+    fetchJson<{ occupied_fee: string; vacant_fee: string; updated_units: number }>("/settings/base-fee", {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

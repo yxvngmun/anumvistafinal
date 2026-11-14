@@ -53,7 +53,10 @@ export default function TenantsPage() {
   const [editContact, setEditContact] = useState("");
   const [editCnic, setEditCnic] = useState("");
   const [editStatus, setEditStatus] = useState<"occupied" | "vacant">("occupied");
-  const [editBaseFee, setEditBaseFee] = useState("");
+  const [baseFeeModalOpen, setBaseFeeModalOpen] = useState(false);
+  const [globalOccupiedFee, setGlobalOccupiedFee] = useState("5500");
+  const [globalVacantFee, setGlobalVacantFee] = useState("4000");
+  const [isSavingBaseFees, setIsSavingBaseFees] = useState(false);
   const [isRental, setIsRental] = useState(false);
   const [tenantName, setTenantName] = useState("");
   const [tenantContact, setTenantContact] = useState("");
@@ -138,7 +141,6 @@ export default function TenantsPage() {
     setEditContact(t.contact || t.phone || "");
     setEditCnic(t.cnic || "");
     setEditStatus(((t.status || "occupied").toLowerCase() === "vacant") ? "vacant" : "occupied");
-    setEditBaseFee(String(Number(t.monthly_maintenance_fee || 5500)));
     setIsRental(Boolean(t.is_rental || t.unit?.is_rental || t.tenant_name));
     setTenantName(t.tenant_name || "");
     setTenantContact(t.tenant_contact || "");
@@ -163,7 +165,6 @@ export default function TenantsPage() {
         contact: editContact.trim() || undefined,
         cnic: editCnic.trim() || undefined,
         status: editStatus,
-        monthly_maintenance_fee: editBaseFee !== "" && !Number.isNaN(Number(editBaseFee)) ? Number(editBaseFee).toFixed(2) : undefined,
         is_rental: isRental,
         tenant_name: isRental ? (tenantName.trim() || undefined) : undefined,
         tenant_contact: isRental ? (tenantContact.trim() || undefined) : undefined,
@@ -334,8 +335,28 @@ export default function TenantsPage() {
             Directory of all building units, occupancy status, and monthly maintenance collections
           </p>
         </div>
-        <div className="text-sm text-slate-500 dark:text-zinc-400 font-mono">
-          Total: <span className="font-bold text-slate-900 dark:text-white">{tenants.length}</span> units
+        <div className="flex items-center gap-3">
+          {isSuperAdmin && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await api.getBaseFees();
+                  setGlobalOccupiedFee(String(Number(res.occupied_fee || 5500)));
+                  setGlobalVacantFee(String(Number(res.vacant_fee || 4000)));
+                } catch {
+                  setGlobalOccupiedFee("5500");
+                  setGlobalVacantFee("4000");
+                }
+                setBaseFeeModalOpen(true);
+              }}
+              className="rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/10 px-3.5 py-2 text-xs font-bold text-slate-800 dark:text-white transition-colors press-feedback shadow-sm"
+            >
+              Edit Base Fee
+            </button>
+          )}
+          <div className="text-sm text-slate-500 dark:text-zinc-400 font-mono">
+            Total: <span className="font-bold text-slate-900 dark:text-white">{tenants.length}</span> units
+          </div>
         </div>
       </div>
 
@@ -835,32 +856,12 @@ export default function TenantsPage() {
                 </label>
                 <select
                   value={editStatus}
-                  onChange={(e) => {
-                    const next = e.target.value as "occupied" | "vacant";
-                    setEditStatus(next);
-                    setEditBaseFee(next === "vacant" ? "4000" : "5500");
-                  }}
+                  onChange={(e) => setEditStatus(e.target.value as "occupied" | "vacant")}
                   className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white font-semibold"
                 >
-                  <option value="occupied">Occupied (Default ₨ 5,500 base)</option>
-                  <option value="vacant">Vacant (Default ₨ 4,000 base)</option>
+                  <option value="occupied">Occupied</option>
+                  <option value="vacant">Vacant</option>
                 </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
-                  Base Maintenance Fee (PKR)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  required
-                  value={editBaseFee}
-                  onChange={(e) => setEditBaseFee(e.target.value)}
-                  placeholder="e.g. 5500"
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
-                />
               </div>
 
               <div>
@@ -966,6 +967,101 @@ export default function TenantsPage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Global Base Fee Modal (Super Admin only) */}
+      {isSuperAdmin && baseFeeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSavingBaseFees(true);
+              try {
+                const res = await api.updateBaseFees({
+                  occupied_fee: Number(globalOccupiedFee || 0).toFixed(2),
+                  vacant_fee: Number(globalVacantFee || 0).toFixed(2),
+                });
+                qc.invalidateQueries({ queryKey: ["tenants"] });
+                setBaseFeeModalOpen(false);
+                setToast({
+                  type: "success",
+                  message: `Updated global base fees for all ${res.updated_units} units (Occupied: ₨ ${Number(res.occupied_fee).toLocaleString()}, Vacant: ₨ ${Number(res.vacant_fee).toLocaleString()}).`,
+                });
+                setTimeout(() => setToast(null), 4000);
+              } catch (err) {
+                setToast({ type: "error", message: (err as Error).message || "Failed to update base fees" });
+              } finally {
+                setIsSavingBaseFees(false);
+              }
+            }}
+            className="w-full max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Edit Global Base Maintenance Fee
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Applies to all occupied and vacant units across the building.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBaseFeeModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-black dark:hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
+                Occupied Unit Base Fee (PKR) *
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                required
+                value={globalOccupiedFee}
+                onChange={(e) => setGlobalOccupiedFee(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
+                Vacant Unit Base Fee (PKR) *
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                required
+                value={globalVacantFee}
+                onChange={(e) => setGlobalVacantFee(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setBaseFeeModalOpen(false)}
+                className="rounded-lg border border-slate-300 dark:border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingBaseFees}
+                className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-5 py-2.5 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
+              >
+                {isSavingBaseFees ? "Updating All Units..." : "Update for Everyone"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

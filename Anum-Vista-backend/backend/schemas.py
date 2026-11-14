@@ -207,11 +207,15 @@ class OccupantUpdate(BaseModel):
     contact: Optional[str] = None
     cnic: Optional[str] = None
     status: Optional[str] = None
-    monthly_maintenance_fee: Optional[Decimal] = None
     is_rental: Optional[bool] = None
     tenant_name: Optional[str] = None
     tenant_contact: Optional[str] = None
     tenant_cnic: Optional[str] = None
+
+
+class BaseFeeUpdate(BaseModel):
+    occupied_fee: Decimal
+    vacant_fee: Decimal
 
 
 class ExpenseDescriptionOut(BaseModel):

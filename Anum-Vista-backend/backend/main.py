@@ -280,14 +280,12 @@ def get_tenants(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_admin),
 ):
+    occ_fee, vac_fee = _get_global_base_fees(db)
     occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
     for occupant in occupants:
         st = (occupant.status or "occupied").lower()
         occupant.status = st
-        if st == "vacant":
-            occupant.monthly_maintenance_fee = Decimal("4000.00")
-        else:
-            occupant.monthly_maintenance_fee = Decimal("5500.00")
+        occupant.monthly_maintenance_fee = vac_fee if st == "vacant" else occ_fee
         extra_cars = max(0, int(occupant.car_count or 1) - 1)
         extra_fee = occupant.extra_car_maintenance_fee or Decimal("2000.00")
         base_fee = occupant.monthly_maintenance_fee
@@ -297,6 +295,58 @@ def get_tenants(
         occupant.expected_dues = _compute_expected_dues(occupant)
         occupant.payment_status = _compute_payment_status(occupant)
     return occupants
+
+
+def _get_global_base_fees(db: Session) -> tuple[Decimal, Decimal]:
+    db.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value VARCHAR)"))
+    occ_row = db.execute(text("SELECT value FROM app_settings WHERE key = 'occupied_base_fee'")).first()
+    vac_row = db.execute(text("SELECT value FROM app_settings WHERE key = 'vacant_base_fee'")).first()
+    occ_fee = Decimal(str(occ_row[0])) if occ_row and occ_row[0] else Decimal("5500.00")
+    vac_fee = Decimal(str(vac_row[0])) if vac_row and vac_row[0] else Decimal("4000.00")
+    return occ_fee, vac_fee
+
+
+@app.get("/api/settings/base-fee")
+def get_global_base_fee(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_admin),
+):
+    occ_fee, vac_fee = _get_global_base_fees(db)
+    return {"occupied_fee": str(occ_fee), "vacant_fee": str(vac_fee)}
+
+
+@app.patch("/api/settings/base-fee")
+def update_global_base_fee(
+    payload: schemas.BaseFeeUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_super_admin),
+):
+    if payload.occupied_fee < 0 or payload.vacant_fee < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Base fee cannot be negative")
+    db.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value VARCHAR)"))
+    for k, v in (("occupied_base_fee", str(payload.occupied_fee)), ("vacant_base_fee", str(payload.vacant_fee))):
+        existing = db.execute(text("SELECT 1 FROM app_settings WHERE key = :k"), {"k": k}).first()
+        if existing:
+            db.execute(text("UPDATE app_settings SET value = :v WHERE key = :k"), {"k": k, "v": v})
+        else:
+            db.execute(text("INSERT INTO app_settings (key, value) VALUES (:k, :v)"), {"k": k, "v": v})
+
+    occupants = db.query(models.Occupant).all()
+    for occ in occupants:
+        st = (occ.status or "occupied").lower()
+        occ.monthly_maintenance_fee = payload.vacant_fee if st == "vacant" else payload.occupied_fee
+        db.add(occ)
+
+    _audit(
+        db,
+        models.AuditAction.verified,
+        "base_fee_settings",
+        0,
+        user,
+        {"occupied_fee": str(payload.occupied_fee), "vacant_fee": str(payload.vacant_fee), "updated_units": len(occupants)},
+    )
+    db.commit()
+    return {"occupied_fee": str(payload.occupied_fee), "vacant_fee": str(payload.vacant_fee), "updated_units": len(occupants)}
 
 
 @app.patch("/api/tenants/{occupant_id}/status", response_model=schemas.OccupantOut)
@@ -314,11 +364,9 @@ def update_tenant_status(
     if st not in ("occupied", "vacant"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status must be 'occupied' or 'vacant'")
 
+    occ_fee, vac_fee = _get_global_base_fees(db)
     occupant.status = st
-    if st == "vacant":
-        occupant.monthly_maintenance_fee = Decimal("4000.00")
-    else:
-        occupant.monthly_maintenance_fee = Decimal("5500.00")
+    occupant.monthly_maintenance_fee = vac_fee if st == "vacant" else occ_fee
 
     db.add(occupant)
     db.commit()
@@ -353,26 +401,21 @@ def update_tenant_car_maintenance(
     if not occupant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
+    occ_fee, vac_fee = _get_global_base_fees(db)
     occupant.car_count = payload.car_count
     occupant.extra_car_maintenance_fee = payload.extra_car_maintenance_fee
     if payload.status:
         st = payload.status.strip().lower()
         if st in ("vacant", "occupied"):
             occupant.status = st
-            if st == "vacant":
-                occupant.monthly_maintenance_fee = Decimal("4000.00")
-            else:
-                occupant.monthly_maintenance_fee = Decimal("5500.00")
+            occupant.monthly_maintenance_fee = vac_fee if st == "vacant" else occ_fee
 
     db.add(occupant)
     db.commit()
     db.refresh(occupant)
 
     st = (occupant.status or "occupied").lower()
-    if st == "vacant":
-        occupant.monthly_maintenance_fee = Decimal("4000.00")
-    else:
-        occupant.monthly_maintenance_fee = Decimal("5500.00")
+    occupant.monthly_maintenance_fee = vac_fee if st == "vacant" else occ_fee
 
     extra_cars = max(0, int(occupant.car_count or 1) - 1)
     extra_fee = occupant.extra_car_maintenance_fee or Decimal("2000.00")
@@ -408,13 +451,9 @@ def update_tenant(
     if payload.status is not None:
         st = payload.status.strip().lower()
         if st in ("occupied", "vacant"):
+            occ_fee, vac_fee = _get_global_base_fees(db)
             occupant.status = st
-            if payload.monthly_maintenance_fee is None:
-                occupant.monthly_maintenance_fee = Decimal("4000.00") if st == "vacant" else Decimal("5500.00")
-    if payload.monthly_maintenance_fee is not None:
-        if payload.monthly_maintenance_fee < 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Base fee cannot be negative")
-        occupant.monthly_maintenance_fee = payload.monthly_maintenance_fee
+            occupant.monthly_maintenance_fee = vac_fee if st == "vacant" else occ_fee
 
     if payload.is_rental is not None:
         occupant.is_rental = payload.is_rental
