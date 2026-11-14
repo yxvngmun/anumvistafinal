@@ -228,115 +228,39 @@ def seed_extra_curriculars(db: Session) -> None:
             db.flush()
         source_map[cfg["code"]] = existing
 
-    existing_refs = {
-        r[0]
-        for r in db.query(models.Transaction.receipt_no)
-        .filter(models.Transaction.receipt_no.like("EXCEL-EC-%"))
-        .all()
-        if r[0]
-    }
-
-    inserted = 0
-    for ref_key, src_code, dt_str, amt_str, rcpt_note, period_lbl, collector in EXCEL_EXTRA_CURRICULAR_ENTRIES:
-        if ref_key in existing_refs:
-            continue
-        src = source_map[src_code]
-        category = (
-            models.TransactionCategory.ad_revenue
-            if src.source_type == "advert"
-            else models.TransactionCategory.other
-        )
-        notes_parts = [src.name]
-        if period_lbl:
-            notes_parts.append(period_lbl)
-        if rcpt_note:
-            notes_parts.append(f"Ref: {rcpt_note}")
-        mode = "cash"
-        if rcpt_note.lower() == "cheque":
-            mode = "cheque"
-        elif rcpt_note.lower() == "bank transfer":
-            mode = "bank_transfer"
-        txn = models.Transaction(
-            receipt_no=ref_key,
-            date=datetime.strptime(dt_str, "%Y-%m-%d"),
-            amount=Decimal(amt_str),
-            type=models.TransactionType.INFLOW,
-            category=category,
-            notes=" — ".join(notes_parts),
-            generated_by=collector or "Excel Import",
-            credited_to=collector,
-            payment_mode=mode,
-            status=models.TransactionStatus.approved,
-            created_at=datetime.utcnow(),
-            approved_at=datetime.utcnow(),
-            extra_source_id=src.id,
-            extra_source_name=src.name,
-            billing_cycle=src.billing_cycle,
-            period_label=period_lbl,
-        )
-        db.add(txn)
-        inserted += 1
-
-    # Seed Oct 2026 Dilshad expenses (1,098,394) & reconcile Dilshad Oct/Nov FundsInHandEntry once
-    existing_exp_refs = {
-        r[0]
-        for r in db.query(models.Transaction.receipt_no)
+    # Undo previously imported Sep 2026 Excel (EXCEL-EC-*) & Oct 2026 PDF (EXCEL-EXP-2026-10-*) records
+    exp_deleted = (
+        db.query(models.Transaction)
         .filter(models.Transaction.receipt_no.like("EXCEL-EXP-2026-10-%"))
-        .all()
-        if r[0]
-    }
-    exp_inserted = 0
-    for ref_key, dt_str, amt_str, exp_desc, particulars, bill_status in OCT_2026_EXPENSES:
-        if ref_key in existing_exp_refs:
-            continue
-        txn = models.Transaction(
-            receipt_no=ref_key,
-            date=datetime.strptime(dt_str, "%Y-%m-%d"),
-            amount=Decimal(amt_str),
-            type=models.TransactionType.OUTFLOW,
-            category=models.TransactionCategory.expense,
-            expense_description=exp_desc,
-            expense_details=bill_status,
-            notes=particulars,
-            generated_by="Dilshad",
-            credited_to="Dilshad",
-            payment_mode="cash",
-            status=models.TransactionStatus.approved,
-            created_at=datetime.utcnow(),
-            approved_at=datetime.utcnow(),
-        )
-        db.add(txn)
-        exp_inserted += 1
-
-    if exp_inserted > 0:
-        # Adjust Dilshad's Oct/Nov 2026 closing balance from 579,710 -> 431,316 (+950,000 - 1,098,394 = -148,394)
+        .delete(synchronize_session=False)
+    )
+    if exp_deleted > 0:
         from datetime import date as date_cls
-        sep_entries = db.query(models.FundsInHandEntry).filter(
-            models.FundsInHandEntry.period == date_cls(2026, 9, 1)
-        ).all()
-        oct_period = date_cls(2026, 10, 1)
-        for e in sep_entries:
-            oct_e = db.query(models.FundsInHandEntry).filter(
-                models.FundsInHandEntry.period == oct_period,
-                models.FundsInHandEntry.person == e.person,
-            ).first()
-            target_amt = Decimal("431316.00") if e.person == "Dilshad" else e.amount
-            if oct_e:
-                oct_e.amount = target_amt
-            else:
-                db.add(models.FundsInHandEntry(period=oct_period, person=e.person, amount=target_amt))
+        sep_dilshad = db.query(models.FundsInHandEntry).filter(
+            models.FundsInHandEntry.period == date_cls(2026, 9, 1),
+            models.FundsInHandEntry.person == "Dilshad",
+        ).first()
+        oct_dilshad = db.query(models.FundsInHandEntry).filter(
+            models.FundsInHandEntry.period == date_cls(2026, 10, 1),
+            models.FundsInHandEntry.person == "Dilshad",
+        ).first()
+        if oct_dilshad and sep_dilshad:
+            oct_dilshad.amount = sep_dilshad.amount
         nov_dilshad = db.query(models.FundsInHandEntry).filter(
             models.FundsInHandEntry.period == date_cls(2026, 11, 1),
             models.FundsInHandEntry.person == "Dilshad",
         ).first()
         if nov_dilshad:
-            nov_dilshad.amount = nov_dilshad.amount - Decimal("148394.00")
+            nov_dilshad.amount = nov_dilshad.amount + Decimal("148394.00")
 
-    if inserted or exp_inserted:
-        db.commit()
-        print(f"Seeded {inserted} extra curricular txns and {exp_inserted} Oct 2026 expense txns.")
-    else:
-        db.commit()
+    ec_deleted = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.receipt_no.like("EXCEL-EC-%"))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    if ec_deleted or exp_deleted:
+        print(f"Undid {ec_deleted} Excel/PDF extra curricular txns and {exp_deleted} Oct 2026 expense txns.")
 
 
 def _slug_code(name: str) -> str:
