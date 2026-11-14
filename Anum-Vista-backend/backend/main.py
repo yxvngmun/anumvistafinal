@@ -593,16 +593,29 @@ def get_dashboard_metrics(
         func.extract('year', models.Transaction.date) == current_year
     ).scalar() or Decimal('0.00')
 
-    # Treasury Balance (All approved inflows - All approved outflows)
-    inflows = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.type == models.TransactionType.INFLOW,
-        models.Transaction.status == models.TransactionStatus.approved,
-    ).scalar() or Decimal('0.00')
-    outflows = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.type == models.TransactionType.OUTFLOW,
-        models.Transaction.status == models.TransactionStatus.approved,
-    ).scalar() or Decimal('0.00')
-    treasury_balance = inflows - outflows
+    # Treasury Balance: sum of latest FundsInHandEntry across active treasurers (matches /api/treasury/current)
+    holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
+    latest_period = db.query(func.max(models.FundsInHandEntry.period)).scalar()
+    if latest_period is not None:
+        treasury_balance = (
+            db.query(func.sum(models.FundsInHandEntry.amount))
+            .filter(
+                models.FundsInHandEntry.period == latest_period,
+                models.FundsInHandEntry.person.in_(holders),
+            )
+            .scalar()
+            or Decimal("0.00")
+        )
+    else:
+        inflows = db.query(func.sum(models.Transaction.amount)).filter(
+            models.Transaction.type == models.TransactionType.INFLOW,
+            models.Transaction.status == models.TransactionStatus.approved,
+        ).scalar() or Decimal("0.00")
+        outflows = db.query(func.sum(models.Transaction.amount)).filter(
+            models.Transaction.type == models.TransactionType.OUTFLOW,
+            models.Transaction.status == models.TransactionStatus.approved,
+        ).scalar() or Decimal("0.00")
+        treasury_balance = inflows - outflows
 
     # Total overdues derived from tenant expected dues.
     occupants = db.query(models.Occupant).all()
