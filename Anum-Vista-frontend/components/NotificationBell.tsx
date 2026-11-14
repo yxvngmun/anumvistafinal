@@ -29,7 +29,11 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchCount();
-    const interval = setInterval(fetchCount, 25000);
+    const interval = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        fetchCount();
+      }
+    }, 25000);
     return () => clearInterval(interval);
   }, []);
 

@@ -59,12 +59,12 @@ export default function DashboardPage() {
     queryFn: api.getTenants,
   });
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ["transactions"],
-    queryFn: () => api.getTransactions(),
-  });
-
   const currentYear = new Date().getFullYear();
+
+  const { data: transactions = [] } = useQuery({
+    queryKey: ["transactions", currentYear],
+    queryFn: () => api.getTransactions(undefined, currentYear),
+  });
 
   const overdueResidents = useMemo(() => {
     return tenants

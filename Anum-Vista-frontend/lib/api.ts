@@ -500,4 +500,9 @@ export const api = {
 
   getWhatsAppConfig: (): Promise<{ configured: boolean; provider: string | null }> =>
     fetchJson("/whatsapp/config"),
+
+  warmUpBackend: (): void => {
+    if (typeof window === "undefined") return;
+    fetch(buildUrl("/health"), { method: "GET", cache: "no-store" }).catch(() => {});
+  },
 };

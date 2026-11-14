@@ -1,8 +1,9 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, text, inspect
+from sqlalchemy import func, text, inspect, case
 from typing import List, Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -227,6 +228,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Register approval/auth/notification/extra-curricular endpoints
 app.include_router(approval_router)
@@ -275,6 +277,11 @@ def _compute_payment_status(occupant: "models.Occupant", as_of: datetime | None 
 def read_root():
     return {"message": "Welcome to Anum Vista Property Management API"}
 
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.get("/api/tenants", response_model=List[schemas.OccupantOut])
 def get_tenants(
     db: Session = Depends(get_db),
@@ -297,13 +304,33 @@ def get_tenants(
     return occupants
 
 
+_base_fee_cache: tuple[Decimal, Decimal] | None = None
+
+
+def _ensure_app_settings_table() -> None:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value VARCHAR)"))
+            conn.commit()
+    except Exception:
+        pass
+
+
+_ensure_app_settings_table()
+
+
 def _get_global_base_fees(db: Session) -> tuple[Decimal, Decimal]:
-    db.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value VARCHAR)"))
-    occ_row = db.execute(text("SELECT value FROM app_settings WHERE key = 'occupied_base_fee'")).first()
-    vac_row = db.execute(text("SELECT value FROM app_settings WHERE key = 'vacant_base_fee'")).first()
-    occ_fee = Decimal(str(occ_row[0])) if occ_row and occ_row[0] else Decimal("5500.00")
-    vac_fee = Decimal(str(vac_row[0])) if vac_row and vac_row[0] else Decimal("4000.00")
-    return occ_fee, vac_fee
+    global _base_fee_cache
+    if _base_fee_cache is not None:
+        return _base_fee_cache
+    rows = db.execute(
+        text("SELECT key, value FROM app_settings WHERE key IN ('occupied_base_fee', 'vacant_base_fee')")
+    ).fetchall()
+    kv = {r[0]: r[1] for r in rows}
+    occ_fee = Decimal(str(kv["occupied_base_fee"])) if kv.get("occupied_base_fee") else Decimal("5500.00")
+    vac_fee = Decimal(str(kv["vacant_base_fee"])) if kv.get("vacant_base_fee") else Decimal("4000.00")
+    _base_fee_cache = (occ_fee, vac_fee)
+    return _base_fee_cache
 
 
 @app.get("/api/settings/base-fee")
@@ -346,6 +373,8 @@ def update_global_base_fee(
         {"occupied_fee": str(payload.occupied_fee), "vacant_fee": str(payload.vacant_fee), "updated_units": len(occupants)},
     )
     db.commit()
+    global _base_fee_cache
+    _base_fee_cache = (payload.occupied_fee, payload.vacant_fee)
     return {"occupied_fee": str(payload.occupied_fee), "vacant_fee": str(payload.vacant_fee), "updated_units": len(occupants)}
 
 
@@ -627,16 +656,80 @@ def get_dashboard_metrics(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_senior_or_super),
 ):
-    current_month = datetime.now().month
-    current_year = datetime.now().year
+    now = datetime.now()
+    current_month = now.month
+    current_year = now.year
 
-    # Total revenue (INFLOW this month) - excludes TRANSFER, only approved
-    total_rev = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.type == models.TransactionType.INFLOW,
-        models.Transaction.status == models.TransactionStatus.approved,
-        func.extract('month', models.Transaction.date) == current_month,
-        func.extract('year', models.Transaction.date) == current_year
-    ).scalar() or Decimal('0.00')
+    # Single aggregate query over transactions (eliminates 4-5 separate roundtrips)
+    txn_agg = db.query(
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (models.Transaction.type == models.TransactionType.INFLOW)
+                        & (models.Transaction.status == models.TransactionStatus.approved)
+                        & (func.extract('month', models.Transaction.date) == current_month)
+                        & (func.extract('year', models.Transaction.date) == current_year),
+                        models.Transaction.amount,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("total_rev"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (models.Transaction.category == models.TransactionCategory.ad_revenue)
+                        & (models.Transaction.status == models.TransactionStatus.approved),
+                        models.Transaction.amount,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("ad_rev"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (models.Transaction.type == models.TransactionType.INFLOW)
+                        & (models.Transaction.status == models.TransactionStatus.approved),
+                        models.Transaction.amount,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("all_inflows"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (models.Transaction.type == models.TransactionType.OUTFLOW)
+                        & (models.Transaction.status == models.TransactionStatus.approved),
+                        models.Transaction.amount,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("all_outflows"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (models.Transaction.status == models.TransactionStatus.pending, 1),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("pending_count"),
+    ).one()
+
+    total_rev = Decimal(str(txn_agg.total_rev or 0))
+    ad_rev = Decimal(str(txn_agg.ad_rev or 0))
+    pending_count = int(txn_agg.pending_count or 0)
 
     # Treasury Balance: sum of latest FundsInHandEntry across active treasurers (matches /api/treasury/current)
     holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
@@ -652,31 +745,16 @@ def get_dashboard_metrics(
             or Decimal("0.00")
         )
     else:
-        inflows = db.query(func.sum(models.Transaction.amount)).filter(
-            models.Transaction.type == models.TransactionType.INFLOW,
-            models.Transaction.status == models.TransactionStatus.approved,
-        ).scalar() or Decimal("0.00")
-        outflows = db.query(func.sum(models.Transaction.amount)).filter(
-            models.Transaction.type == models.TransactionType.OUTFLOW,
-            models.Transaction.status == models.TransactionStatus.approved,
-        ).scalar() or Decimal("0.00")
-        treasury_balance = inflows - outflows
+        treasury_balance = Decimal(str(txn_agg.all_inflows or 0)) - Decimal(str(txn_agg.all_outflows or 0))
 
     # Total overdues derived from tenant expected dues.
     occupants = db.query(models.Occupant).all()
-    total_overdues = sum((_compute_expected_dues(occupant) for occupant in occupants), Decimal("0.00"))
-
-    # Ad revenue (All time, approved only)
-    ad_rev = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.category == models.TransactionCategory.ad_revenue,
-        models.Transaction.status == models.TransactionStatus.approved,
-    ).scalar() or Decimal('0.00')
+    total_overdues = sum((_compute_expected_dues(occupant, as_of=now) for occupant in occupants), Decimal("0.00"))
 
     # Total apartments
     total_apartments = db.query(func.count(models.Unit.id)).scalar() or 0
 
-    # Advance payments: residents whose last_paid_month >= current month
-    now = datetime.now()
+    # Advance payments: residents whose last_paid_month > current month
     current_month_date = datetime(now.year, now.month, 1)
     advance_count_amount = Decimal("0.00")
     for occ in occupants:
@@ -690,11 +768,6 @@ def get_dashboard_metrics(
                 extra_cars = max(0, int(occ.car_count or 1) - 1)
                 extra = occ.extra_car_maintenance_fee or Decimal("0.00")
                 advance_count_amount += (base + extra * extra_cars) * months_ahead
-
-    # Pending approvals count
-    pending_count = db.query(func.count(models.Transaction.id)).filter(
-        models.Transaction.status == models.TransactionStatus.pending,
-    ).scalar() or 0
 
     return schemas.DashboardMetrics(
         total_revenue=total_rev,
