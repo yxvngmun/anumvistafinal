@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, CashReconciliationReport } from "@/lib/api";
+import { api, CashReconciliationReport, hasPermission } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 const fmt = (v: string | number | null | undefined) =>
@@ -19,7 +19,7 @@ export default function CashReconciliationPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
+  const isSuperAdmin = hasPermission(user, "reports_ledger");
 
   const { data } = useQuery<CashReconciliationReport>({
     queryKey: ["reports", "cash-reconciliation", year, month],

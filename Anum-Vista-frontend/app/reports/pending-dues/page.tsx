@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { api, PendingDuesReport } from "@/lib/api";
+import { api, PendingDuesReport, hasPermission } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 const fmt = (v: string | number) =>
@@ -14,7 +14,7 @@ type SortKey = "unit_no" | "name" | "months_overdue" | "total_due";
 export default function PendingDuesPage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
+  const isSuperAdmin = hasPermission(user, "reports_ledger");
 
   useEffect(() => {
     if (isAuthenticated && user && !isSuperAdmin) {

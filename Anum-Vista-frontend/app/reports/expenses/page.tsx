@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { api, ExpenseReport } from "@/lib/api";
+import { api, ExpenseReport, hasPermission } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 const fmt = (v: string | number) =>
@@ -17,7 +17,7 @@ const MONTH_LABELS = [
 export default function ExpensesPage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
+  const isSuperAdmin = hasPermission(user, "reports_ledger");
 
   useEffect(() => {
     if (isAuthenticated && user && !isSuperAdmin) {

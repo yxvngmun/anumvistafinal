@@ -335,6 +335,8 @@ def get_tenants(
     user: models.User = Depends(require_admin),
 ):
     occ_fee, vac_fee = _get_global_base_fees(db)
+    now = datetime.now()
+    current_month_date = datetime(now.year, now.month, 1)
     occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
     for occupant in occupants:
         st = (occupant.status or "occupied").lower()
@@ -1502,7 +1504,7 @@ def get_advance_payments_report(
 ):
     now = datetime.now()
     current_month_date = datetime(now.year, now.month, 1)
-    occupants = db.query(models.Occupant).all()
+    occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
     entries = []
 
     for occ in occupants:
