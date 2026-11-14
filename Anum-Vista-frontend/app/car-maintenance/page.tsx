@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Occupant } from "@/lib/types";
@@ -16,10 +17,14 @@ const formatAmount = (value: string | number | undefined): string =>
 export default function CarsAndParkingPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
+  const router = useRouter();
   const qc = useQueryClient();
   const [editors, setEditors] = useState<Record<number, { carCount: number }>>({});
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
+  const bypassGuardRef = useRef(false);
 
   const { data: tenants = [], isLoading } = useQuery({
     queryKey: ["tenants"],
@@ -38,6 +43,18 @@ export default function CarsAndParkingPage() {
       return next;
     });
   }, [tenants]);
+
+  const dirtyRows = useMemo(() => {
+    if (!isSuperAdmin) return [];
+    return tenants.filter((t) => {
+      const editor = editors[t.id];
+      if (!editor) return false;
+      const savedCount = t.car_count ?? 1;
+      return editor.carCount !== savedCount;
+    });
+  }, [tenants, editors, isSuperAdmin]);
+
+  const hasUnsavedChanges = dirtyRows.length > 0;
 
   const totals = useMemo(() => {
     return tenants.reduce(
@@ -75,7 +92,7 @@ export default function CarsAndParkingPage() {
         extra_car_maintenance_fee: EXTRA_MAINTENANCE_PER_ADDITIONAL_CAR.toFixed(2),
         status: tenant.status || "occupied",
       });
-      qc.invalidateQueries({ queryKey: ["tenants"] });
+      await qc.invalidateQueries({ queryKey: ["tenants"] });
       setToast({ type: "success", message: `Updated Unit ${tenant.unit.unit_no}: ${normalizedCars} vehicle(s)` });
     } catch (err) {
       setToast({ type: "error", message: (err as Error).message || "Failed to update." });
@@ -83,6 +100,116 @@ export default function CarsAndParkingPage() {
       setSavingId(null);
     }
   };
+
+  const discardAllChanges = useCallback(() => {
+    setEditors(() => {
+      const reset: Record<number, { carCount: number }> = {};
+      tenants.forEach((t) => {
+        reset[t.id] = { carCount: t.car_count ?? 1 };
+      });
+      return reset;
+    });
+  }, [tenants]);
+
+  const saveAllDirty = async (): Promise<boolean> => {
+    if (!isSuperAdmin || dirtyRows.length === 0) return true;
+    try {
+      setIsSavingAll(true);
+      for (const tenant of dirtyRows) {
+        const normalizedCars = Math.max(0, Number(editors[tenant.id]?.carCount ?? tenant.car_count ?? 1));
+        await api.updateCarMaintenance(tenant.id, {
+          car_count: normalizedCars,
+          extra_car_maintenance_fee: EXTRA_MAINTENANCE_PER_ADDITIONAL_CAR.toFixed(2),
+          status: tenant.status || "occupied",
+        });
+      }
+      await qc.invalidateQueries({ queryKey: ["tenants"] });
+      setToast({
+        type: "success",
+        message: `Saved ${dirtyRows.length} vehicle update(s) successfully.`,
+      });
+      return true;
+    } catch (err) {
+      setToast({
+        type: "error",
+        message: (err as Error).message || "Failed to save all changes.",
+      });
+      return false;
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
+  const proceedToNavigation = useCallback(
+    (target: string) => {
+      bypassGuardRef.current = true;
+      setPendingNavHref(null);
+      if (target === "__BACK__") {
+        window.history.back();
+      } else {
+        router.push(target);
+      }
+    },
+    [router],
+  );
+
+  // Prevent browser refresh / tab close when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (bypassGuardRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Intercept in-app link clicks when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleDocumentClick = (e: MouseEvent) => {
+      if (bypassGuardRef.current) return;
+      const target = e.target as HTMLElement | null;
+      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+
+      const hrefAttr = anchor.getAttribute("href");
+      if (!hrefAttr || hrefAttr.startsWith("#") || hrefAttr.startsWith("mailto:") || hrefAttr.startsWith("tel:")) {
+        return;
+      }
+
+      try {
+        const destUrl = new URL(anchor.href, window.location.origin);
+        if (destUrl.origin !== window.location.origin) return;
+        const nextPath = `${destUrl.pathname}${destUrl.search}${destUrl.hash}`;
+        const currPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextPath === currPath) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        setPendingNavHref(nextPath);
+      } catch {
+        // Ignore malformed URLs
+      }
+    };
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => document.removeEventListener("click", handleDocumentClick, true);
+  }, [hasUnsavedChanges]);
+
+  // Intercept browser Back / Forward button when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handlePopState = () => {
+      if (bypassGuardRef.current) return;
+      window.history.pushState(null, "", window.location.href);
+      setPendingNavHref("__BACK__");
+    };
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (!toast) return;
@@ -151,6 +278,39 @@ export default function CarsAndParkingPage() {
         </div>
       </div>
 
+      {/* Unsaved Changes Banner */}
+      {hasUnsavedChanges && (
+        <div className="sticky top-2 z-30 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/80 px-4 py-3 shadow-md flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              You have {dirtyRows.length} unsaved change{dirtyRows.length > 1 ? "s" : ""}{" "}
+              <span className="font-normal text-amber-800 dark:text-amber-300">
+                ({dirtyRows.map((d) => `Flat ${d.unit.unit_no}`).join(", ")})
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isSavingAll}
+              onClick={discardAllChanges}
+              className="rounded-lg border border-amber-300 dark:border-amber-500/30 bg-white dark:bg-white/10 px-3.5 py-1.5 text-xs font-bold text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-white/20 transition-colors disabled:opacity-50"
+            >
+              Discard All
+            </button>
+            <button
+              type="button"
+              disabled={isSavingAll}
+              onClick={saveAllDirty}
+              className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-4 py-1.5 text-xs font-bold transition-colors shadow-sm disabled:opacity-50"
+            >
+              {isSavingAll ? "Saving..." : "Save All Changes"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -177,7 +337,9 @@ export default function CarsAndParkingPage() {
                 tenants.map((t, idx) => {
                   const editor = editors[t.id];
                   const isVacant = (t.status || "").toLowerCase() === "vacant";
-                  const carCount = editor?.carCount ?? (t.car_count ?? 1);
+                  const savedCount = t.car_count ?? 1;
+                  const carCount = editor?.carCount ?? savedCount;
+                  const isDirty = isSuperAdmin && carCount !== savedCount;
                   const isSaving = savingId === t.id;
                   const rowBaseFee = isVacant ? VACANT_BASE_FEE : OCCUPIED_BASE_FEE;
                   const extraCars = Math.max(0, carCount - 1);
@@ -185,15 +347,33 @@ export default function CarsAndParkingPage() {
                   const totalMaintenance = rowBaseFee + extraCarsFee;
 
                   return (
-                    <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className="py-4 px-4 font-mono font-bold text-slate-900 dark:text-white text-base">{t.unit.unit_no}</td>
+                    <tr
+                      key={`${t.id}-${idx}`}
+                      className={`transition-colors ${
+                        isDirty
+                          ? "bg-amber-50/90 dark:bg-amber-500/15 border-l-4 border-l-amber-500 hover:bg-amber-100/80 dark:hover:bg-amber-500/20"
+                          : "hover:bg-slate-50 dark:hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <td className="py-4 px-4 font-mono font-bold text-slate-900 dark:text-white text-base">
+                        <div className="flex items-center gap-2">
+                          <span>{t.unit.unit_no}</span>
+                        </div>
+                      </td>
                       <td className="py-4 px-4 font-semibold text-slate-900 dark:text-zinc-100 text-sm">
-                        {t.name}
-                        {isVacant && (
-                          <span className="ml-2 text-xs font-bold text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-500/20">
-                            Vacant
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{t.name}</span>
+                          {isVacant && (
+                            <span className="text-xs font-bold text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-500/20">
+                              Vacant
+                            </span>
+                          )}
+                          {isDirty && (
+                            <span className="text-xs font-bold text-amber-800 bg-amber-200/80 dark:bg-amber-500/30 dark:text-amber-200 px-2 py-0.5 rounded border border-amber-400 dark:border-amber-400/50">
+                              Unsaved ({savedCount} → {carCount})
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Base Fee */}
@@ -204,7 +384,13 @@ export default function CarsAndParkingPage() {
                       {/* Vehicles Counter */}
                       <td className="py-4 px-4 text-center">
                         {isSuperAdmin ? (
-                          <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-white/[0.04] p-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                          <div
+                            className={`inline-flex items-center gap-2 p-1.5 rounded-lg border ${
+                              isDirty
+                                ? "bg-white dark:bg-white/10 border-amber-400 dark:border-amber-400/60 ring-2 ring-amber-400/30"
+                                : "bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/10"
+                            }`}
+                          >
                             <button
                               type="button"
                               onClick={() =>
@@ -263,14 +449,36 @@ export default function CarsAndParkingPage() {
                       {/* Action */}
                       <td className="py-4 px-4 text-right">
                         {isSuperAdmin ? (
-                          <button
-                            type="button"
-                            disabled={isSaving}
-                            onClick={() => saveRow(t)}
-                            className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-4 py-2 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
-                          >
-                            {isSaving ? "Saving..." : "Save"}
-                          </button>
+                          <div className="inline-flex items-center gap-2">
+                            {isDirty && (
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() =>
+                                  setEditors((prev) => ({
+                                    ...prev,
+                                    [t.id]: { carCount: savedCount },
+                                  }))
+                                }
+                                title="Reset to saved value"
+                                className="rounded-lg border border-slate-300 dark:border-white/15 px-2.5 py-2 text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-white/10 transition-colors"
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => saveRow(t)}
+                              className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors press-feedback disabled:opacity-50 ${
+                                isDirty
+                                  ? "bg-amber-600 hover:bg-amber-700 text-white shadow-sm ring-2 ring-amber-400/50"
+                                  : "bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200"
+                              }`}
+                            >
+                              {isSaving ? "Saving..." : isDirty ? "Save*" : "Save"}
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-xs text-slate-400 dark:text-zinc-500 font-medium">Read-only</span>
                         )}
@@ -283,6 +491,85 @@ export default function CarsAndParkingPage() {
           </table>
         </div>
       </div>
+
+      {/* Unsaved Changes Leave Confirmation Modal */}
+      {pendingNavHref !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Unsaved Vehicle Changes
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-zinc-400 mt-1">
+                  You have modified vehicle counts that haven&apos;t been saved yet. Would you like to save or discard your changes before leaving?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingNavHref(null)}
+                className="p-1 text-slate-400 hover:text-black dark:hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-40 overflow-y-auto rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/10 p-3 space-y-1.5">
+              {dirtyRows.map((d) => {
+                const oldVal = d.car_count ?? 1;
+                const newVal = editors[d.id]?.carCount ?? oldVal;
+                return (
+                  <div key={d.id} className="flex items-center justify-between text-xs font-medium text-amber-900 dark:text-amber-200">
+                    <span>
+                      <span className="font-mono font-bold">Flat {d.unit.unit_no}</span> · {d.name}
+                    </span>
+                    <span className="font-mono font-bold">
+                      {oldVal} → {newVal} {newVal === 1 ? "car" : "cars"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
+              <button
+                type="button"
+                disabled={isSavingAll}
+                onClick={() => setPendingNavHref(null)}
+                className="rounded-lg border border-slate-300 dark:border-white/15 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors"
+              >
+                Stay on Page
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAll}
+                onClick={() => {
+                  const target = pendingNavHref;
+                  discardAllChanges();
+                  if (target) proceedToNavigation(target);
+                }}
+                className="rounded-lg border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-500/10 px-4 py-2 text-sm font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+              >
+                Discard Changes
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAll}
+                onClick={async () => {
+                  const target = pendingNavHref;
+                  const ok = await saveAllDirty();
+                  if (ok && target) {
+                    proceedToNavigation(target);
+                  }
+                }}
+                className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-4 py-2 text-sm font-bold transition-colors press-feedback disabled:opacity-50"
+              >
+                {isSavingAll ? "Saving..." : "Save & Leave"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
