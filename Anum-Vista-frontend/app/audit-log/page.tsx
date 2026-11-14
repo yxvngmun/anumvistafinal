@@ -10,8 +10,36 @@ const actionStyles: Record<string, string> = {
   approved: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
   rejected: "bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20",
   cancelled: "bg-slate-100 dark:bg-zinc-500/10 text-slate-700 dark:text-zinc-400 border-slate-200 dark:border-zinc-500/20",
+  restored: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/20",
   verified: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
-  login: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20",
+  login: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20",
+};
+
+interface ParsedAuditDetails {
+  unit_no?: string;
+  resident_name?: string;
+  source_name?: string;
+  amount?: string;
+  received_by?: string;
+  credited_to?: string;
+  months?: string;
+  period_label?: string;
+  receipt_no?: string;
+  restored_by?: string;
+  restored_at?: string;
+  reason?: string;
+  date?: string;
+  received_at?: string;
+}
+
+const parseAuditDetails = (raw: string | null): ParsedAuditDetails | null => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
 };
 
 const fmtTime = (iso: string) => {
@@ -76,7 +104,7 @@ export default function AuditLogPage() {
         />
 
         <div className="flex items-center gap-1 overflow-x-auto">
-          {["ALL", "created", "approved", "rejected", "cancelled", "login"].map((f) => (
+          {["ALL", "created", "approved", "restored", "rejected", "cancelled", "login"].map((f) => (
             <button
               key={f}
               onClick={() => setActionFilter(f)}
@@ -102,30 +130,57 @@ export default function AuditLogPage() {
           ) : logs.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-400">No audit entries found</div>
           ) : (
-            logs.map((item) => (
-              <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors text-xs">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider border shrink-0 ${
-                      actionStyles[item.action] || "bg-slate-100 dark:bg-zinc-500/10 text-slate-700 dark:text-zinc-400 border-slate-200 dark:border-zinc-500/20"
-                    }`}
-                  >
-                    {item.action}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-slate-800 dark:text-zinc-200 font-medium truncate">
-                      <span className="text-slate-900 dark:text-white font-semibold">{item.performed_by_username || "System"}</span> · {item.entity_type} {item.entity_id ? `#${item.entity_id}` : ""}
-                    </p>
-                    {item.details && (
-                      <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono truncate mt-0.5">{item.details}</p>
-                    )}
+            logs.map((item) => {
+              const d = parseAuditDetails(item.details);
+              const subject = d?.resident_name || d?.source_name;
+              const tags: string[] = [];
+              if (d?.unit_no) tags.push(`Flat ${d.unit_no}`);
+              if (subject) tags.push(subject);
+              if (d?.amount) tags.push(`₨ ${Number(d.amount).toLocaleString("en-PK")}`);
+              if (d?.months) tags.push(`Months: ${d.months}`);
+              if (d?.period_label) tags.push(`Period: ${d.period_label}`);
+              if (d?.received_by) tags.push(`Received by: ${d.received_by}`);
+              if (d?.credited_to) tags.push(`Treasurer: ${d.credited_to}`);
+              if (d?.receipt_no) tags.push(`Ref: ${d.receipt_no}`);
+              if (d?.restored_by) tags.push(`Restored by: ${d.restored_by}`);
+              if (d?.reason) tags.push(`Reason: ${d.reason}`);
+
+              return (
+                <div key={item.id} className="p-4 flex items-start justify-between hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors text-xs gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider border shrink-0 mt-0.5 ${
+                        actionStyles[item.action] || "bg-slate-100 dark:bg-zinc-500/10 text-slate-700 dark:text-zinc-400 border-slate-200 dark:border-zinc-500/20"
+                      }`}
+                    >
+                      {item.action}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-slate-800 dark:text-zinc-200 font-medium">
+                        <span className="text-slate-900 dark:text-white font-semibold">{item.performed_by_username || "System"}</span> · {item.entity_type} {item.entity_id ? `#${item.entity_id}` : ""}
+                      </p>
+                      {tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {tags.map((tag, i) => (
+                            <span
+                              key={i}
+                              className="rounded-md bg-slate-100 dark:bg-white/[0.06] px-2 py-0.5 text-[11px] text-slate-700 dark:text-zinc-300 font-medium"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : item.details ? (
+                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono truncate mt-0.5">{item.details}</p>
+                      ) : null}
+                    </div>
                   </div>
+                  <span className="text-[11px] text-slate-400 dark:text-zinc-400 font-mono shrink-0 ml-4 tabular-nums">
+                    {fmtTime(item.created_at)}
+                  </span>
                 </div>
-                <span className="text-[11px] text-slate-400 dark:text-zinc-400 font-mono shrink-0 ml-4 tabular-nums">
-                  {fmtTime(item.created_at)}
-                </span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

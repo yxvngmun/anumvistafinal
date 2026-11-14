@@ -74,7 +74,7 @@ export interface Transaction {
   generated_by?: string | null;
   generatedBy?: string | null;
   source?: string | null;
-  status?: "pending" | "approved" | "rejected" | "cancelled";
+  status?: "pending" | "approved" | "rejected" | "cancelled" | "restored";
   submitted_by_user_id?: number | null;
   approved_by_user_id?: number | null;
   approved_at?: string | null;
@@ -84,6 +84,55 @@ export interface Transaction {
   credited_to?: string | null;
   transfer_from?: string | null;
   payment_mode?: string | null;
+  extra_source_id?: number | null;
+  extra_source_name?: string | null;
+  billing_cycle?: string | null;
+  period_label?: string | null;
+  restored_at?: string | null;
+  restored_by_user_id?: number | null;
+  restore_reason?: string | null;
+}
+
+export interface ExtraCurricularSourceSummary {
+  id: number;
+  code: string;
+  name: string;
+  source_type: "community_hall" | "advert" | "other" | string;
+  billing_cycle: "quarterly" | "half_yearly" | "yearly" | "one_time" | string;
+  annual_fixed_amount: DecimalString;
+  monthly_target: DecimalString;
+  total_received: DecimalString;
+  received_per_month: DecimalString;
+  remaining_annual: DecimalString;
+  remaining_per_month: DecimalString;
+  pending_amount: DecimalString;
+  transaction_count: number;
+}
+
+export interface ExtraCurricularOverviewResponse {
+  year: number;
+  sources: ExtraCurricularSourceSummary[];
+  transactions: Transaction[];
+}
+
+export interface ExtraCurricularCollectPayload {
+  source_id?: number;
+  source_code?: string;
+  custom_source_name?: string;
+  amount: string;
+  date: string;
+  billing_cycle: "quarterly" | "half_yearly" | "yearly" | "one_time";
+  period_label?: string;
+  credited_to: string;
+  payment_mode?: string;
+  generated_by?: string;
+  notes?: string;
+}
+
+export interface ExtraCurricularSourceUpdatePayload {
+  name?: string;
+  billing_cycle?: "quarterly" | "half_yearly" | "yearly" | "one_time";
+  annual_fixed_amount?: string;
 }
 
 export type PaymentMode = "cash" | "bank_transfer" | "cheque" | "online" | "other";

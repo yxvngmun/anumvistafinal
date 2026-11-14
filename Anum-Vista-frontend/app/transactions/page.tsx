@@ -11,7 +11,7 @@ import type {
   Occupant,
 } from "@/lib/types";
 
-type StatusFilter = "ALL" | "pending" | "approved" | "rejected" | "cancelled";
+type StatusFilter = "ALL" | "pending" | "approved" | "restored" | "rejected" | "cancelled";
 type YearFilter = "ALL" | number;
 
 const TREASURERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"];
@@ -29,6 +29,7 @@ const fmtDate = (iso: string) => {
 const statusBadges: Record<string, string> = {
   approved: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
   pending: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20",
+  restored: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/20",
   rejected: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20",
   cancelled: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-zinc-500/10 dark:text-zinc-400 dark:border-zinc-500/20",
 };
@@ -53,6 +54,9 @@ function TransactionsContent() {
   const [rejectReason, setRejectReason] = useState("");
   const [cancelId, setCancelId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [restoreId, setRestoreId] = useState<number | null>(null);
+  const [restoreReason, setRestoreReason] = useState("");
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -157,6 +161,28 @@ function TransactionsContent() {
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreId) return;
+    const reason = restoreReason.trim();
+    if (!reason) {
+      setError("A compulsory reason note is required to restore a transaction.");
+      return;
+    }
+    setIsRestoring(true);
+    try {
+      await api.restoreTransaction(restoreId, reason);
+      await loadData();
+      setRestoreId(null);
+      setRestoreReason("");
+      setSuccessMsg("Transaction restored, treasury adjusted, pending dues reopened, and logged.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -272,7 +298,10 @@ function TransactionsContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {pendingApprovals.map((tx) => {
-              const label = tx.occupant_id ? occupantMap.get(tx.occupant_id) || "Occupant" : "General Expense";
+              const label = tx.occupant_id
+                ? occupantMap.get(tx.occupant_id) || "Occupant"
+                : tx.extra_source_name || (tx.type === "INFLOW" ? "General Inflow" : "General Expense");
+              const isInflow = tx.type === "INFLOW";
               return (
                 <div key={tx.id} className="rounded-lg bg-white dark:bg-[#0d131f] border border-slate-200 dark:border-white/10 p-3.5 space-y-2 shadow-sm">
                   <div className="flex items-start justify-between">
@@ -282,8 +311,8 @@ function TransactionsContent() {
                         {fmtDate(tx.date)} · {tx.category} · {tx.notes || "No notes"}
                       </p>
                     </div>
-                    <p className="text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
-                      -{fmt(tx.amount)}
+                    <p className={`text-sm font-bold font-mono ${isInflow ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                      {isInflow ? "+" : "-"}{fmt(tx.amount)}
                     </p>
                   </div>
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/[0.06]">
@@ -330,7 +359,7 @@ function TransactionsContent() {
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto">
-          {(["ALL", "pending", "approved", "rejected", "cancelled"] as StatusFilter[]).map((s) => (
+          {(["ALL", "pending", "approved", "restored", "rejected", "cancelled"] as StatusFilter[]).map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -434,8 +463,14 @@ function TransactionsContent() {
                       </p>
                     )}
 
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
-                      {tx.type === "INFLOW" && txStatus === "approved" && (
+                    {tx.restore_reason && (
+                      <p className="text-purple-700 dark:text-purple-300 text-xs bg-purple-50 dark:bg-purple-500/10 p-2 rounded border border-purple-200 dark:border-purple-500/20">
+                        Restored Reason: {tx.restore_reason}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
+                      {tx.type === "INFLOW" && (txStatus === "approved" || txStatus === "restored") && (
                         <button
                           onClick={() => {
                             const url = api.getReceiptUrl(tx.id);
@@ -448,12 +483,23 @@ function TransactionsContent() {
                         </button>
                       )}
                       {isSuperAdmin && txStatus === "approved" && (
-                        <button
-                          onClick={() => setCancelId(tx.id)}
-                          className="rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20 px-3 py-1.5 text-xs font-semibold transition-colors"
-                        >
-                          Cancel Transaction
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              setRestoreId(tx.id);
+                              setRestoreReason("");
+                            }}
+                            className="rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/20 px-3 py-1.5 text-xs font-semibold transition-colors"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            onClick={() => setCancelId(tx.id)}
+                            className="rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/20 px-3 py-1.5 text-xs font-semibold transition-colors"
+                          >
+                            Cancel Transaction
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -630,6 +676,35 @@ function TransactionsContent() {
             <div className="flex justify-end gap-2">
               <button onClick={() => setRejectId(null)} className="rounded-lg border border-slate-300 dark:border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-400">Cancel</button>
               <button onClick={handleReject} className="rounded-lg bg-rose-600 text-white px-3 py-1.5 text-xs font-bold">Confirm Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Modal (Super Admin Only, Compulsory Reason) */}
+      {restoreId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-5 space-y-4 shadow-xl">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Restore Approved Transaction</h3>
+            <p className="text-xs text-slate-500 dark:text-zinc-400">
+              Restoring reverses this amount from the treasurer&apos;s balance, reopens pending dues/targets, and logs a permanent audit entry. A reason note is compulsory.
+            </p>
+            <textarea
+              rows={3}
+              placeholder="Compulsory reason for restoring..."
+              value={restoreReason}
+              onChange={(e) => setRestoreReason(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] p-2.5 text-xs text-slate-900 dark:text-white outline-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRestoreId(null)} className="rounded-lg border border-slate-300 dark:border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-400">Back</button>
+              <button
+                onClick={handleRestore}
+                disabled={isRestoring || !restoreReason.trim()}
+                className="rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-4 py-1.5 text-xs font-bold"
+              >
+                {isRestoring ? "Restoring..." : "Confirm Restore"}
+              </button>
             </div>
           </div>
         </div>

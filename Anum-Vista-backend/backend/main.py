@@ -11,12 +11,14 @@ try:
     from backend import models, schemas
     from backend.database import engine, get_db
     from backend.approval_endpoints import router as approval_router, _seed_users, _audit
+    from backend.extra_curriculars import ec_router, seed_extra_curriculars
     from backend.auth import require_admin, require_super_admin
 except ImportError:
     import models
     import schemas
     from database import engine, get_db
     from approval_endpoints import router as approval_router, _seed_users, _audit
+    from extra_curriculars import ec_router, seed_extra_curriculars
     from auth import require_admin, require_super_admin
 
 # Create DB tables
@@ -167,13 +169,27 @@ def _ensure_all_model_columns() -> None:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN expense_description VARCHAR"))
             if "expense_details" not in txn_cols:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN expense_details VARCHAR"))
+            if "extra_source_id" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN extra_source_id INTEGER"))
+            if "extra_source_name" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN extra_source_name VARCHAR"))
+            if "billing_cycle" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN billing_cycle VARCHAR"))
+            if "period_label" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN period_label VARCHAR"))
+            if "restored_at" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN restored_at DATETIME"))
+            if "restored_by_user_id" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN restored_by_user_id INTEGER"))
+            if "restore_reason" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN restore_reason VARCHAR"))
 
         conn.commit()
 
 
 _ensure_all_model_columns()
 
-# Seed default users
+# Seed default users & Excel extra curricular records
 try:
     try:
         from backend.database import SessionLocal
@@ -181,9 +197,10 @@ try:
         from database import SessionLocal
     _db = SessionLocal()
     _seed_users(_db)
+    seed_extra_curriculars(_db)
     _db.close()
 except Exception as exc:
-    print(f"Failed to seed default users: {exc}")
+    print(f"Failed to seed default users/extra curriculars: {exc}")
 
 app = FastAPI(
     title="Property Management API",
@@ -202,8 +219,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register approval/auth/notification endpoints
+# Register approval/auth/notification/extra-curricular endpoints
 app.include_router(approval_router)
+app.include_router(ec_router)
 
 def _month_index(year: int, month: int) -> int:
     return year * 12 + month
@@ -464,16 +482,25 @@ def create_transaction(
 
     db.flush()
 
-    db.add(
-        models.AuditLog(
-            action=models.AuditAction.created,
-            entity_type="transaction",
-            entity_id=db_txn.id,
-            performed_by_user_id=user.id,
-            performed_by_username=user.username,
-            details=f'{{"source":"transactions","amount":"{db_txn.amount}","auto_approved":{str(is_super).lower()}}}',
-        )
-    )
+    occupant_obj = None
+    if db_txn.occupant_id:
+        occupant_obj = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).filter(models.Occupant.id == db_txn.occupant_id).first()
+
+    rich_txn_details = {
+        "source": "transactions",
+        "txn_type": db_txn.type.value if hasattr(db_txn.type, "value") else str(db_txn.type),
+        "category": db_txn.category.value if hasattr(db_txn.category, "value") else str(db_txn.category),
+        "resident_name": occupant_obj.name if occupant_obj else db_txn.expense_description,
+        "unit_no": occupant_obj.unit.unit_no if (occupant_obj and occupant_obj.unit) else None,
+        "received_by": db_txn.generated_by or user.username,
+        "credited_to": db_txn.credited_to,
+        "transfer_from": db_txn.transfer_from,
+        "payment_mode": db_txn.payment_mode,
+        "date": db_txn.date.strftime("%Y-%m-%d") if db_txn.date else None,
+        "amount": str(db_txn.amount),
+        "auto_approved": is_super,
+    }
+    _audit(db, models.AuditAction.created, "transaction", db_txn.id, user, rich_txn_details)
 
     if is_super:
         try:
@@ -482,20 +509,11 @@ def create_transaction(
             from approval_endpoints import _apply_treasury_effect
         _apply_treasury_effect(db, db_txn)
         if db_txn.occupant_id and db_txn.category == models.TransactionCategory.maintenance:
-            occupant = db.query(models.Occupant).filter(models.Occupant.id == db_txn.occupant_id).first()
+            occupant = occupant_obj or db.query(models.Occupant).filter(models.Occupant.id == db_txn.occupant_id).first()
             if occupant and (occupant.last_paid_month is None or db_txn.date > occupant.last_paid_month):
                 occupant.last_paid_month = db_txn.date
                 db.add(occupant)
-        db.add(
-            models.AuditLog(
-                action=models.AuditAction.approved,
-                entity_type="transaction",
-                entity_id=db_txn.id,
-                performed_by_user_id=user.id,
-                performed_by_username=user.username,
-                details=f'{{"source":"super_admin_direct","amount":"{db_txn.amount}"}}',
-            )
-        )
+        _audit(db, models.AuditAction.approved, "transaction", db_txn.id, user, {**rich_txn_details, "source": "super_admin_direct"})
     else:
         super_admins = db.query(models.User).filter(models.User.role == models.UserRole.super_admin).all()
         for sa in super_admins:

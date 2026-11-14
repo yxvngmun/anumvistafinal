@@ -32,6 +32,7 @@ class TransactionStatus(str, enum.Enum):
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+    restored = "restored"
 
 class PaymentMode(str, enum.Enum):
     cash = "cash"
@@ -45,6 +46,7 @@ class AuditAction(str, enum.Enum):
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+    restored = "restored"
     verified = "verified"
     login = "login"
 
@@ -123,10 +125,19 @@ class Transaction(Base):
     credited_to = Column(String, nullable=True)  # treasurer destination (or single holder for inflow/outflow)
     transfer_from = Column(String, nullable=True)  # source treasurer when type=TRANSFER
     payment_mode = Column(String, nullable=True)  # cash, bank_transfer, cheque, online, other
+    extra_source_id = Column(Integer, ForeignKey("extra_curricular_sources.id"), nullable=True)
+    extra_source_name = Column(String, nullable=True)
+    billing_cycle = Column(String, nullable=True)  # quarterly, half_yearly, yearly, one_time
+    period_label = Column(String, nullable=True)  # e.g. Q1 2026, H1 2026, 2026
+    restored_at = Column(DateTime, nullable=True)
+    restored_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    restore_reason = Column(String, nullable=True)
 
     occupant = relationship("Occupant", back_populates="transactions")
     submitted_by = relationship("User", foreign_keys=[submitted_by_user_id])
     approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    restored_by = relationship("User", foreign_keys=[restored_by_user_id])
+    extra_source = relationship("ExtraCurricularSource", back_populates="transactions")
     notifications = relationship("Notification", back_populates="transaction")
 
 
@@ -218,3 +229,18 @@ class OutstandingMaintenanceSnapshot(Base):
     maintenance_till_period = Column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     received_during_year = Column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     dues_till_period = Column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
+
+
+class ExtraCurricularSource(Base):
+    __tablename__ = "extra_curricular_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    source_type = Column(String, nullable=False, default="other")  # community_hall | advert | other
+    billing_cycle = Column(String, nullable=False, default="yearly")  # quarterly | half_yearly | yearly | one_time
+    annual_fixed_amount = Column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    transactions = relationship("Transaction", back_populates="extra_source")

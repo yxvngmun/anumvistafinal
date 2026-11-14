@@ -96,14 +96,24 @@ class TransactionOut(TransactionCreate):
     rejection_reason: Optional[str] = None
     cancelled_at: Optional[datetime] = None
     cancel_reason: Optional[str] = None
+    extra_source_id: Optional[int] = None
+    extra_source_name: Optional[str] = None
+    billing_cycle: Optional[str] = None
+    period_label: Optional[str] = None
+    restored_at: Optional[datetime] = None
+    restored_by_user_id: Optional[int] = None
+    restore_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
 
-# --- Approvals ---
+# --- Approvals & Restore ---
 class ApprovalAction(BaseModel):
     action: str  # "approve", "reject", "cancel"
     reason: Optional[str] = None
+
+class RestoreRequest(BaseModel):
+    reason: str
 
 # --- Notifications ---
 class NotificationOut(BaseModel):
@@ -387,3 +397,49 @@ class DueRemindersOut(BaseModel):
     generated_at: str
     total_residents_due: int
     entries: List[DueReminderEntry]
+
+
+# ─── Extra Curriculars ───────────────────────────────────────────────
+class ExtraCurricularSourceUpdate(BaseModel):
+    name: Optional[str] = None
+    billing_cycle: Optional[str] = None  # quarterly | half_yearly | yearly | one_time
+    annual_fixed_amount: Optional[Decimal] = None
+
+
+class ExtraCurricularPaymentCreate(BaseModel):
+    source_id: Optional[int] = None
+    source_code: Optional[str] = None  # community_hall | advert_1..4 | other
+    custom_source_name: Optional[str] = None
+    amount: Decimal
+    date: datetime
+    billing_cycle: str = "yearly"  # quarterly | half_yearly | yearly | one_time
+    period_label: Optional[str] = None
+    credited_to: str
+    payment_mode: str = "cash"
+    generated_by: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ExtraCurricularSourceOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    source_type: str
+    billing_cycle: str
+    annual_fixed_amount: Decimal
+    monthly_target: Decimal
+    total_received: Decimal
+    received_per_month: Decimal
+    remaining_annual: Decimal
+    remaining_per_month: Decimal
+    pending_amount: Decimal = Decimal("0.00")
+    transaction_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class ExtraCurricularOverviewOut(BaseModel):
+    year: int
+    sources: List[ExtraCurricularSourceOut]
+    transactions: List[TransactionOut]

@@ -2,6 +2,10 @@ import type {
   CreateTransactionPayload,
   DashboardMetricsResponse,
   ExpenseDescription,
+  ExtraCurricularCollectPayload,
+  ExtraCurricularOverviewResponse,
+  ExtraCurricularSourceSummary,
+  ExtraCurricularSourceUpdatePayload,
   MonthlyReportResponse,
   Occupant,
   TreasuryCurrentResponse,
@@ -349,6 +353,30 @@ export const api = {
     fetchJson(`/transactions/${id}/cancel`, {
       method: "POST",
       body: JSON.stringify({ action: "cancel", reason }),
+    }),
+
+  restoreTransaction: (id: number, reason: string): Promise<Transaction> =>
+    fetchJson<Transaction>(`/transactions/${id}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
+  getExtraCurriculars: (year = 2026): Promise<ExtraCurricularOverviewResponse> =>
+    fetchJson<ExtraCurricularOverviewResponse>(withQuery("/extra-curriculars", { year })),
+
+  updateExtraCurricularSource: (
+    sourceId: number,
+    payload: ExtraCurricularSourceUpdatePayload,
+  ): Promise<ExtraCurricularSourceSummary> =>
+    fetchJson<ExtraCurricularSourceSummary>(`/extra-curriculars/${sourceId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  collectExtraCurricular: (payload: ExtraCurricularCollectPayload): Promise<Transaction> =>
+    fetchJson<Transaction>("/extra-curriculars/collect", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 
   getNotifications: (): Promise<NotificationItem[]> =>

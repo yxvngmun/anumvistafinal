@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, UnpaidMonth } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { Occupant } from "@/lib/types";
+import type { Occupant, Transaction } from "@/lib/types";
 
 const fmt = (v: string | number) =>
   `₨ ${Number(v).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
@@ -64,6 +64,14 @@ export default function TenantsPage() {
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
   const [unpaidMonths, setUnpaidMonths] = useState<UnpaidMonth[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Receipts history & Super Admin Restore
+  const [historyTenant, setHistoryTenant] = useState<Occupant | null>(null);
+  const [historyTxns, setHistoryTxns] = useState<Transaction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<Transaction | null>(null);
+  const [restoreReason, setRestoreReason] = useState("");
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const { data: tenants = [], isLoading } = useQuery({
     queryKey: ["tenants"],
@@ -221,26 +229,72 @@ export default function TenantsPage() {
         const sortedKeys = Array.from(selectedMonths).sort();
         const formattedMonthNames = sortedKeys.map(formatMonthDisplay).join(", ");
         const total = selectedMonths.size * Number(selectedTenant.total_monthly_maintenance || selectedTenant.monthly_maintenance_fee);
-        await api.createTransaction({
-          date: new Date().toISOString(),
-          amount: total.toString(),
-          type: "INFLOW",
-          category: "maintenance",
+        await api.createReceiptV2({
           occupant_id: selectedTenant.id,
+          months: sortedKeys,
+          amount: total.toString(),
           credited_to: creditedTo,
           payment_mode: paymentMode,
           generated_by: generatedBy,
-          notes: `Maintenance fee for: ${formattedMonthNames}`,
         });
-        setToast({ type: "success", message: `Payment for ${formattedMonthNames} logged successfully` });
+        setToast({
+          type: "success",
+          message: isSuperAdmin
+            ? `Receipt logged for ${formattedMonthNames}`
+            : `Receipt submitted for approval (${formattedMonthNames})`,
+        });
       }
       qc.invalidateQueries({ queryKey: ["tenants"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
       setSelectedTenant(null);
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
       setToast({ type: "error", message: (err as Error).message });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const openResidentHistory = async (tenant: Occupant) => {
+    setHistoryTenant(tenant);
+    setLoadingHistory(true);
+    try {
+      const allTxns = await api.getTransactions();
+      setHistoryTxns(allTxns.filter((t) => t.occupant_id === tenant.id));
+    } catch (err) {
+      setToast({ type: "error", message: (err as Error).message });
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleRestoreMaintenance = async () => {
+    if (!restoreTarget) return;
+    const reason = restoreReason.trim();
+    if (!reason) {
+      setToast({ type: "error", message: "Please provide a compulsory restore reason." });
+      return;
+    }
+    setIsRestoring(true);
+    try {
+      await api.restoreTransaction(restoreTarget.id, reason);
+      await qc.invalidateQueries({ queryKey: ["tenants"] });
+      await qc.invalidateQueries({ queryKey: ["transactions"] });
+      if (historyTenant) {
+        const refreshed = await api.getTransactions();
+        setHistoryTxns(refreshed.filter((t) => t.occupant_id === historyTenant.id));
+      }
+      setRestoreTarget(null);
+      setRestoreReason("");
+      setToast({
+        type: "success",
+        message: `Receipt ${restoreTarget.receipt_no || `#${restoreTarget.id}`} restored. Treasurer adjusted & dues reopened.`,
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      setToast({ type: "error", message: (err as Error).message });
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -442,12 +496,22 @@ export default function TenantsPage() {
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedTenant(t)}
-                          className="rounded-lg bg-slate-100 hover:bg-black hover:text-white text-slate-800 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white dark:hover:text-black px-3.5 py-1.5 text-sm font-bold transition-colors press-feedback"
-                        >
-                          Collect
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedTenant(t)}
+                            className="rounded-lg bg-slate-100 hover:bg-black hover:text-white text-slate-800 dark:bg-white/10 dark:text-zinc-200 dark:hover:bg-white dark:hover:text-black px-3.5 py-1.5 text-sm font-bold transition-colors press-feedback"
+                          >
+                            Collect
+                          </button>
+                          {isSuperAdmin && (
+                            <button
+                              onClick={() => openResidentHistory(t)}
+                              className="rounded-lg border border-slate-200 dark:border-white/15 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10"
+                            >
+                              Receipts
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -818,6 +882,129 @@ export default function TenantsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Resident Maintenance Receipts & Super Admin Restore Modal */}
+      {historyTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Flat {historyTenant.unit.unit_no} · {historyTenant.name} — Receipts
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Approved receipts can be restored (Super Admin only) with a compulsory reason note to reopen pending dues.
+                </p>
+              </div>
+              <button onClick={() => setHistoryTenant(null)} className="text-slate-400 hover:text-black dark:hover:text-white">✕</button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="py-8 text-center text-sm text-slate-400">Loading receipts...</div>
+            ) : historyTxns.length === 0 ? (
+              <div className="py-8 text-center text-sm text-slate-400">No recorded receipts for this resident.</div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-white/10">
+                {historyTxns.map((tx) => {
+                  const st = tx.status || "approved";
+                  return (
+                    <div key={tx.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                            {tx.receipt_no || `TXN-${tx.id}`}
+                          </span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                            st === "approved"
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                              : st === "restored"
+                              ? "bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300"
+                              : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-zinc-400"
+                          }`}>
+                            {st}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                          {new Date(tx.date).toLocaleDateString("en-PK", { month: "short", year: "numeric" })} · {tx.notes || "Maintenance"} · Treasurer: {tx.credited_to || "—"}
+                        </div>
+                        {tx.restore_reason && (
+                          <div className="text-xs text-purple-700 dark:text-purple-300 mt-0.5">
+                            Restored reason: {tx.restore_reason}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-sm text-slate-900 dark:text-white mr-1">
+                          {fmt(tx.amount)}
+                        </span>
+                        <button
+                          onClick={() => {
+                            const url = api.getReceiptUrl(tx.id);
+                            const token = localStorage.getItem("av_token") || "";
+                            window.open(`${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`, "_blank", "noopener");
+                          }}
+                          className="rounded-lg border border-slate-200 dark:border-white/15 px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-zinc-200"
+                        >
+                          PDF
+                        </button>
+                        {isSuperAdmin && st === "approved" && (
+                          <button
+                            onClick={() => {
+                              setRestoreTarget(tx);
+                              setRestoreReason("");
+                            }}
+                            className="rounded-lg bg-purple-50 border border-purple-200 text-purple-700 dark:bg-purple-500/10 dark:border-purple-500/30 dark:text-purple-300 px-2.5 py-1 text-xs font-bold hover:bg-purple-100"
+                          >
+                            Restore
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Restore Compulsory Note Modal */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Restore Maintenance Receipt
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-zinc-300">
+              Restoring <span className="font-mono font-bold">{restoreTarget.receipt_no || `#${restoreTarget.id}`}</span> ({fmt(restoreTarget.amount)}) deducts the amount from <span className="font-bold">{restoreTarget.credited_to || "treasury"}</span>, reopens pending dues, and logs this action in Audit Trail.
+            </p>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
+                Compulsory Reason / Note *
+              </label>
+              <textarea
+                rows={3}
+                value={restoreReason}
+                onChange={(e) => setRestoreReason(e.target.value)}
+                placeholder="Explain why this receipt is being restored (required)..."
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] p-2.5 text-sm text-slate-900 dark:text-white outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setRestoreTarget(null)} className="rounded-lg border px-4 py-2 text-xs font-bold text-slate-600 dark:text-zinc-300">
+                Cancel
+              </button>
+              <button
+                onClick={handleRestoreMaintenance}
+                disabled={isRestoring || !restoreReason.trim()}
+                className="rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-4 py-2 text-xs font-bold"
+              >
+                {isRestoring ? "Restoring..." : "Confirm Restore"}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -283,8 +283,18 @@ def approve_transaction(txn_id: int, db: Session = Depends(get_db),
             occupant.last_paid_month = txn.date
             db.add(occupant)
 
-    _audit(db, models.AuditAction.approved, "transaction", txn.id, user,
-           {"credited_to": txn.credited_to, "transfer_from": txn.transfer_from, "amount": str(txn.amount)})
+    _audit(db, models.AuditAction.approved, "transaction", txn.id, user, {
+        "resident_name": txn.occupant.name if txn.occupant else (txn.extra_source_name or txn.notes),
+        "unit_no": txn.occupant.unit.unit_no if (txn.occupant and txn.occupant.unit) else None,
+        "received_by": txn.generated_by or (txn.submitted_by.username if txn.submitted_by else None),
+        "credited_to": txn.credited_to,
+        "transfer_from": txn.transfer_from,
+        "payment_mode": txn.payment_mode,
+        "amount": str(txn.amount),
+        "receipt_no": txn.receipt_no,
+        "date": txn.date.strftime("%Y-%m-%d") if txn.date else None,
+        "category": txn.category.value if hasattr(txn.category, "value") else str(txn.category),
+    })
 
     # Notify the submitter
     if txn.submitted_by_user_id and txn.submitted_by_user_id != user.id:
@@ -379,6 +389,108 @@ def cancel_transaction(txn_id: int, body: schemas.ApprovalAction,
     super_admins = db.query(models.User).filter(models.User.role == models.UserRole.super_admin).all()
     for sa in super_admins:
         _notify(db, sa.id, "info", "Transaction Cancelled", f"{user.username} cancelled receipt #{txn.receipt_no or txn.id}.", txn.id)
+
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+@router.post("/api/transactions/{txn_id}/restore", response_model=schemas.TransactionOut)
+def restore_transaction(
+    txn_id: int,
+    body: schemas.RestoreRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_super_admin),
+):
+    reason = (body.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A restore reason note is required.")
+
+    txn = db.query(models.Transaction).filter(models.Transaction.id == txn_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.status == models.TransactionStatus.restored:
+        raise HTTPException(status_code=400, detail="Transaction is already restored")
+    if txn.status != models.TransactionStatus.approved:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only approved transactions can be restored (current status: {txn.status.value})",
+        )
+
+    now = datetime.utcnow()
+    _reverse_treasury_effect(db, txn)
+
+    unit_no = None
+    resident_name = None
+    if txn.occupant_id and txn.category == models.TransactionCategory.maintenance:
+        occupant = db.query(models.Occupant).filter(models.Occupant.id == txn.occupant_id).first()
+        if occupant:
+            resident_name = occupant.name
+            unit_no = occupant.unit.unit_no if occupant.unit else None
+            latest_other = (
+                db.query(func.max(models.Transaction.date))
+                .filter(
+                    models.Transaction.occupant_id == txn.occupant_id,
+                    models.Transaction.category == models.TransactionCategory.maintenance,
+                    models.Transaction.status == models.TransactionStatus.approved,
+                    models.Transaction.id != txn.id,
+                )
+                .scalar()
+            )
+            occupant.last_paid_month = latest_other
+            db.add(occupant)
+
+    txn.status = models.TransactionStatus.restored
+    txn.restored_at = now
+    txn.restored_by_user_id = user.id
+    txn.restore_reason = reason
+    txn.cancelled_at = now
+    txn.cancel_reason = reason
+
+    source_label = resident_name or txn.extra_source_name or txn.expense_description or txn.notes or f"TXN #{txn.id}"
+    _audit(
+        db,
+        models.AuditAction.restored,
+        "transaction",
+        txn.id,
+        user,
+        {
+            "txn_type": txn.type.value if hasattr(txn.type, "value") else str(txn.type),
+            "category": txn.category.value if hasattr(txn.category, "value") else str(txn.category),
+            "amount": str(txn.amount),
+            "receipt_no": txn.receipt_no,
+            "resident_name": resident_name,
+            "unit_no": unit_no,
+            "source_name": source_label,
+            "received_by": txn.generated_by or (txn.submitted_by.username if txn.submitted_by else None),
+            "credited_to": txn.credited_to,
+            "restored_by": user.username,
+            "restored_at": now.isoformat() + "Z",
+            "reason": reason,
+            "treasury_reversed": True,
+        },
+    )
+
+    if txn.submitted_by_user_id and txn.submitted_by_user_id != user.id:
+        _notify(
+            db,
+            txn.submitted_by_user_id,
+            "cancelled",
+            "Transaction Restored",
+            f"Receipt #{txn.receipt_no or txn.id} (₨{txn.amount}) was restored by {user.username}. Reason: {reason}",
+            txn.id,
+        )
+
+    super_admins = db.query(models.User).filter(models.User.role == models.UserRole.super_admin).all()
+    for sa in super_admins:
+        _notify(
+            db,
+            sa.id,
+            "info",
+            "Transaction Restored",
+            f"{user.username} restored {txn.type.value} #{txn.receipt_no or txn.id} (₨{txn.amount}). Reason: {reason}",
+            txn.id,
+        )
 
     db.commit()
     db.refresh(txn)
@@ -527,14 +639,33 @@ def create_receipt_v2(payload: schemas.ReceiptCreate, db: Session = Depends(get_
         if occupant and (occupant.last_paid_month is None or db_txn.date > occupant.last_paid_month):
             occupant.last_paid_month = db_txn.date
             db.add(occupant)
-        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user,
-               {"months": month_labels, "amount": str(payload.amount), "credited_to": payload.credited_to,
-                "auto_approved": True})
+        rich_details = {
+            "unit_no": unit_label,
+            "resident_name": occupant.name,
+            "months": month_labels,
+            "amount": str(payload.amount),
+            "received_by": db_txn.generated_by,
+            "credited_to": payload.credited_to,
+            "payment_mode": payload.payment_mode,
+            "receipt_no": receipt_no,
+            "date": db_txn.date.strftime("%Y-%m-%d"),
+            "auto_approved": True,
+        }
+        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user, rich_details)
         _audit(db, models.AuditAction.approved, "transaction", db_txn.id, user,
-               {"credited_to": payload.credited_to, "amount": str(payload.amount), "source": "super_admin_direct"})
+               {**rich_details, "source": "super_admin_direct"})
     else:
-        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user,
-               {"months": month_labels, "amount": str(payload.amount), "credited_to": payload.credited_to})
+        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user, {
+            "unit_no": unit_label,
+            "resident_name": occupant.name,
+            "months": month_labels,
+            "amount": str(payload.amount),
+            "received_by": db_txn.generated_by,
+            "credited_to": payload.credited_to,
+            "payment_mode": payload.payment_mode,
+            "receipt_no": receipt_no,
+            "date": db_txn.date.strftime("%Y-%m-%d"),
+        })
 
         # Notify all super admins
         super_admins = db.query(models.User).filter(models.User.role == models.UserRole.super_admin).all()
@@ -662,13 +793,35 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
         if occupant.last_paid_month is None or db_txn.date > occupant.last_paid_month:
             occupant.last_paid_month = db_txn.date
             db.add(occupant)
-        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user,
-               {"months": month_labels, "amount": str(total_applied), "auto_allocated": True})
+        rich_details = {
+            "unit_no": unit_label,
+            "resident_name": occupant.name,
+            "months": month_labels,
+            "amount": str(total_applied),
+            "received_by": db_txn.generated_by,
+            "credited_to": payload.credited_to,
+            "payment_mode": payload.payment_mode,
+            "receipt_no": receipt_no,
+            "date": db_txn.date.strftime("%Y-%m-%d"),
+            "auto_allocated": True,
+            "auto_approved": True,
+        }
+        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user, rich_details)
         _audit(db, models.AuditAction.approved, "transaction", db_txn.id, user,
-               {"credited_to": payload.credited_to, "amount": str(total_applied), "source": "auto_allocate"})
+               {**rich_details, "source": "auto_allocate"})
     else:
-        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user,
-               {"months": month_labels, "amount": str(total_applied), "auto_allocated": True})
+        _audit(db, models.AuditAction.created, "transaction", db_txn.id, user, {
+            "unit_no": unit_label,
+            "resident_name": occupant.name,
+            "months": month_labels,
+            "amount": str(total_applied),
+            "received_by": db_txn.generated_by,
+            "credited_to": payload.credited_to,
+            "payment_mode": payload.payment_mode,
+            "receipt_no": receipt_no,
+            "date": db_txn.date.strftime("%Y-%m-%d"),
+            "auto_allocated": True,
+        })
         super_admins = db.query(models.User).filter(models.User.role == models.UserRole.super_admin).all()
         for sa in super_admins:
             msg = f"{user.username} submitted auto-allocated receipt for {unit_label} — {month_labels} (₨{total_applied})"
@@ -819,8 +972,8 @@ def get_receipt_pdf(
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     occupant = None
-    occupant_name = "General"
-    unit_no = "—"
+    occupant_name = txn.extra_source_name or "General"
+    unit_no = txn.period_label or "—"
     if txn.occupant_id:
         occupant = db.query(models.Occupant).filter(models.Occupant.id == txn.occupant_id).first()
         if occupant:
