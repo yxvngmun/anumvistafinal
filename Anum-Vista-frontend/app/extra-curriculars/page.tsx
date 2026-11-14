@@ -296,9 +296,6 @@ export default function ExtraCurricularsPage() {
             className="rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-sm font-semibold text-slate-800 dark:text-white"
           >
             <option value={2026}>Year 2026</option>
-            <option value={2025}>Year 2025</option>
-            <option value={2024}>Year 2024</option>
-            <option value={2023}>Year 2023</option>
             <option value={0}>All Years</option>
           </select>
 

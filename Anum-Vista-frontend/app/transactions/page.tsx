@@ -13,9 +13,43 @@ import type {
 
 type StatusFilter = "ALL" | "pending" | "approved" | "restored" | "rejected" | "cancelled";
 type YearFilter = "ALL" | number;
+type MonthFilter = "ALL" | number;
 
 const TREASURERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"];
 const OPERATIONAL_TREASURERS = ["Naveed", "Dilshad", "Danish"];
+const MONTHS = [
+  { value: 1, label: "Jan" },
+  { value: 2, label: "Feb" },
+  { value: 3, label: "Mar" },
+  { value: 4, label: "Apr" },
+  { value: 5, label: "May" },
+  { value: 6, label: "Jun" },
+  { value: 7, label: "Jul" },
+  { value: 8, label: "Aug" },
+  { value: 9, label: "Sep" },
+  { value: 10, label: "Oct" },
+  { value: 11, label: "Nov" },
+  { value: 12, label: "Dec" },
+];
+const DEFAULT_EXPENSE_CATEGORIES = [
+  "Water Tanker",
+  "Salaries + Security Guards",
+  "Lift Work + Monthly Maintenance",
+  "Petty Cash Expenses",
+  "Utilities - Kelectric",
+  "Electrical Work Expenses",
+  "Generator & Diesel Exp",
+  "Building Colour",
+  "Building Maintenance - Others",
+  "Play Area Expense",
+  "Entertainment Expense",
+  "Water - Machine and Plumbering Work",
+  "Qurbani Expenses",
+  "Mosque/Ramzan Expenses",
+  "Gym Expense",
+  "Building Assets",
+  "Camera, Intercom and Internet Expenses",
+];
 
 const fmt = (v: string | number) =>
   `₨ ${Number(v).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
@@ -53,6 +87,8 @@ function TransactionsContent() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedYear, setSelectedYear] = useState<YearFilter>("ALL");
+  const [selectedMonth, setSelectedMonth] = useState<MonthFilter>("ALL");
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(DEFAULT_EXPENSE_CATEGORIES);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [rejectId, setRejectId] = useState<number | null>(null);
@@ -84,9 +120,17 @@ function TransactionsContent() {
 
   const loadData = async () => {
     try {
-      const [t, o] = await Promise.all([api.getTransactions(), api.getTenants()]);
+      const [t, o, ed] = await Promise.all([
+        api.getTransactions(),
+        api.getTenants(),
+        api.getExpenseDescriptions().catch(() => []),
+      ]);
       setTransactions(t);
       setTenants(o);
+      const list = (ed || []).map((d) => d.description).filter((s): s is string => Boolean(s));
+      if (list.length > 0) {
+        setExpenseCategories(list);
+      }
     } catch {
       setError("Failed to load transactions");
     } finally {
@@ -105,10 +149,10 @@ function TransactionsContent() {
   }, [tenants]);
 
   const years = useMemo(() => {
-    const set = new Set<number>();
+    const set = new Set<number>([2026]);
     transactions.forEach((tx) => {
       const yr = new Date(tx.date).getFullYear();
-      if (!Number.isNaN(yr)) set.add(yr);
+      if (!Number.isNaN(yr) && yr >= 2026) set.add(yr);
     });
     return Array.from(set).sort((a, b) => b - a);
   }, [transactions]);
@@ -131,14 +175,16 @@ function TransactionsContent() {
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return transactions.filter((tx) => {
-      const yrMatch = selectedYear === "ALL" || new Date(tx.date).getFullYear() === selectedYear;
-      const label = tx.occupant_id ? occupantMap.get(tx.occupant_id) || "" : "General";
+      const dt = new Date(tx.date);
+      const yrMatch = selectedYear === "ALL" || dt.getFullYear() === selectedYear;
+      const monthMatch = selectedMonth === "ALL" || dt.getMonth() + 1 === selectedMonth;
+      const label = tx.occupant_id ? occupantMap.get(tx.occupant_id) || "" : (tx.expense_description || "");
       const searchMatch = !q || label.toLowerCase().includes(q) || (tx.notes || "").toLowerCase().includes(q);
       const statusMatch = statusFilter === "ALL" || tx.status === statusFilter;
       const tabMatch = currentTab === "inflow" ? tx.type === "INFLOW" : tx.type !== "INFLOW";
-      return yrMatch && searchMatch && statusMatch && tabMatch;
+      return yrMatch && monthMatch && searchMatch && statusMatch && tabMatch;
     });
-  }, [transactions, searchQuery, selectedYear, statusFilter, occupantMap, currentTab]);
+  }, [transactions, searchQuery, selectedYear, selectedMonth, statusFilter, occupantMap, currentTab]);
 
   const handleApprove = async (id: number) => {
     try {
@@ -373,6 +419,16 @@ function TransactionsContent() {
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value === "ALL" ? "ALL" : Number(e.target.value))}
+            className="rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-2.5 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+          >
+            <option value="ALL">All Months</option>
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto">
@@ -580,16 +636,33 @@ function TransactionsContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as TransactionCategory)}
-                    className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
-                  >
-                    <option value="expense">Building Expense</option>
-                    <option value="ad_revenue">Ad / Marketing</option>
-                    <option value="other">Other</option>
-                  </select>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">
+                    {type === "OUTFLOW" ? "Expense Category *" : "Category"}
+                  </label>
+                  {type === "OUTFLOW" ? (
+                    <select
+                      required
+                      value={expDesc}
+                      onChange={(e) => {
+                        setExpDesc(e.target.value);
+                        setCategory("expense");
+                      }}
+                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                    >
+                      <option value="">Select Expense Category...</option>
+                      {expenseCategories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as TransactionCategory)}
+                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                    >
+                      <option value="other">Internal Transfer</option>
+                    </select>
+                  )}
                 </div>
               </div>
 

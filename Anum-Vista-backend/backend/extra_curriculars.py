@@ -216,37 +216,72 @@ OCT_2026_EXPENSES = [
 ]
 
 
+EXPENSE_CATEGORIES_V2 = [
+    "Water Tanker",
+    "Salaries + Security Guards",
+    "Lift Work + Monthly Maintenance",
+    "Petty Cash Expenses",
+    "Utilities - Kelectric",
+    "Electrical Work Expenses",
+    "Generator & Diesel Exp",
+    "Building Colour",
+    "Building Maintenance - Others",
+    "Play Area Expense",
+    "Entertainment Expense",
+    "Water - Machine and Plumbering Work",
+    "Qurbani Expenses",
+    "Mosque/Ramzan Expenses",
+    "Gym Expense",
+    "Building Assets",
+    "Camera, Intercom and Internet Expenses",
+]
+
+
 def _ensure_financial_reset_v1(db: Session) -> None:
-    """One-time clean financial reset: zero out all inflows, outflows, treasury, and logs while retaining units & occupants."""
+    """One-time clean financial reset & expense category sync (libSQL/Turso-safe)."""
     db.execute(
         text(
             "CREATE TABLE IF NOT EXISTS system_migration_flags ("
-            "flag VARCHAR PRIMARY KEY, applied_at DATETIME)"
+            "flag VARCHAR PRIMARY KEY, applied_at VARCHAR)"
         )
     )
-    already = db.execute(
-        text("SELECT 1 FROM system_migration_flags WHERE flag = 'clean_financial_reset_v1'")
-    ).first()
-    if already:
-        return
-
-    db.query(models.Notification).delete(synchronize_session=False)
-    db.query(models.AuditLog).delete(synchronize_session=False)
-    db.query(models.Transaction).delete(synchronize_session=False)
-    db.query(models.FundsInHandEntry).delete(synchronize_session=False)
-    db.query(models.FundsPositionEntry).delete(synchronize_session=False)
-    db.query(models.OutstandingMaintenanceSnapshot).delete(synchronize_session=False)
-
-    now_period = date_cls(datetime.now().year, datetime.now().month, 1)
-    for person in ("Naveed", "Asif", "Dilshad", "Ali", "Danish"):
-        db.add(models.FundsInHandEntry(period=now_period, person=person, amount=Decimal("0.00")))
-
-    db.execute(
-        text("INSERT INTO system_migration_flags (flag, applied_at) VALUES ('clean_financial_reset_v1', :ts)"),
-        {"ts": datetime.utcnow()},
-    )
     db.commit()
-    print("Applied one-time clean financial reset (retained units & occupants).")
+
+    already_reset = db.execute(
+        text("SELECT 1 FROM system_migration_flags WHERE flag = 'clean_financial_reset_v2'")
+    ).first()
+    if not already_reset:
+        db.query(models.Notification).delete(synchronize_session=False)
+        db.query(models.AuditLog).delete(synchronize_session=False)
+        db.query(models.Transaction).delete(synchronize_session=False)
+        db.query(models.FundsInHandEntry).delete(synchronize_session=False)
+        db.query(models.FundsPositionEntry).delete(synchronize_session=False)
+        db.query(models.OutstandingMaintenanceSnapshot).delete(synchronize_session=False)
+
+        now_period = date_cls(datetime.now().year, datetime.now().month, 1)
+        for person in ("Naveed", "Asif", "Dilshad", "Ali", "Danish"):
+            db.add(models.FundsInHandEntry(period=now_period, person=person, amount=Decimal("0.00")))
+
+        db.execute(
+            text("INSERT INTO system_migration_flags (flag, applied_at) VALUES ('clean_financial_reset_v2', :ts)"),
+            {"ts": datetime.utcnow().isoformat()},
+        )
+        db.commit()
+        print("Applied clean_financial_reset_v2 (retained units & occupants).")
+
+    already_cats = db.execute(
+        text("SELECT 1 FROM system_migration_flags WHERE flag = 'expense_categories_v2'")
+    ).first()
+    if not already_cats:
+        db.query(models.ExpenseDescription).delete(synchronize_session=False)
+        for desc in EXPENSE_CATEGORIES_V2:
+            db.add(models.ExpenseDescription(description=desc))
+        db.execute(
+            text("INSERT INTO system_migration_flags (flag, applied_at) VALUES ('expense_categories_v2', :ts)"),
+            {"ts": datetime.utcnow().isoformat()},
+        )
+        db.commit()
+        print("Synced 17 expense categories (expense_categories_v2).")
 
 
 def seed_extra_curriculars(db: Session) -> None:
