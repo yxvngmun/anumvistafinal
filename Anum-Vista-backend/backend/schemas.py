@@ -62,6 +62,8 @@ class OccupantOut(OccupantBase):
     id: int
     unit: UnitOut
     last_paid_month: Optional[datetime] = None
+    partial_paid_amount: Decimal = Decimal('0.00')
+    payment_status: str = "Overdue"
     expected_dues: Decimal = Decimal('0.00') # Dynamically calculated field
     extra_cars: int = 0
     extra_car_charges: Decimal = Decimal('0.00')
@@ -280,8 +282,15 @@ class UnpaidMonth(BaseModel):
     label: str
     year: int
     is_due: bool
+    monthly_fee: Decimal = Decimal("0.00")
+    paid_amount: Decimal = Decimal("0.00")
+    remaining_amount: Decimal = Decimal("0.00")
+    is_partial: bool = False
 
 class UnpaidMonthsOut(BaseModel):
+    monthly_fee: Decimal = Decimal("0.00")
+    partial_paid_amount: Decimal = Decimal("0.00")
+    total_overdue: Decimal = Decimal("0.00")
     months: List[UnpaidMonth]
 
 

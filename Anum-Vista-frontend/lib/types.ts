@@ -1,5 +1,5 @@
 export type DecimalString = string;
-export type TenantStatus = "Overdue" | "Settled";
+export type TenantStatus = "Overdue" | "Settled" | "Advance";
 
 export type TransactionType = "INFLOW" | "OUTFLOW" | "TRANSFER";
 
@@ -41,6 +41,8 @@ export interface Occupant {
   extra_car_charges?: DecimalString;
   total_monthly_maintenance?: DecimalString;
   last_paid_month: string | null;
+  partial_paid_amount?: DecimalString;
+  payment_status?: TenantStatus | string;
   due_month?: string | null;
   expected_dues: DecimalString;
   status?: string;

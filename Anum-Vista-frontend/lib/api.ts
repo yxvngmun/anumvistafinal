@@ -134,6 +134,10 @@ export interface UnpaidMonth {
   label: string;
   year: number;
   is_due: boolean;
+  monthly_fee?: string;
+  paid_amount?: string;
+  remaining_amount?: string;
+  is_partial?: boolean;
 }
 
 export interface ReceiptV2Payload {
@@ -331,11 +335,21 @@ export const api = {
   },
 
   // ─── New governance endpoints ──────────────────────────────────────────
-  getTreasurers: (): Promise<{ treasurers: string[] }> =>
-    fetchJson<{ treasurers: string[] }>("/treasurers"),
+  getTreasurers: (): Promise<{
+    treasurers: string[];
+    operational_treasurers?: string[];
+    maintenance_receiver?: string;
+    advert_receiver?: string;
+  }> =>
+    fetchJson("/treasurers"),
 
-  getUnpaidMonths: (occupantId: number): Promise<{ months: UnpaidMonth[] }> =>
-    fetchJson<{ months: UnpaidMonth[] }>(`/tenants/${occupantId}/unpaid-months`),
+  getUnpaidMonths: (occupantId: number): Promise<{
+    monthly_fee?: string;
+    partial_paid_amount?: string;
+    total_overdue?: string;
+    months: UnpaidMonth[];
+  }> =>
+    fetchJson(`/tenants/${occupantId}/unpaid-months`),
 
   createReceiptV2: (payload: ReceiptV2Payload): Promise<{ id: number; receipt_no: string; status: string }> =>
     fetchJson("/receipts", { method: "POST", body: JSON.stringify(payload) }),

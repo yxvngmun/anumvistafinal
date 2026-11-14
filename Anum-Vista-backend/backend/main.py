@@ -162,6 +162,8 @@ def _ensure_all_model_columns() -> None:
                 conn.execute(text("ALTER TABLE occupants ADD COLUMN cnic VARCHAR"))
             if "contact" not in occ_cols:
                 conn.execute(text("ALTER TABLE occupants ADD COLUMN contact VARCHAR"))
+            if "partial_paid_amount" not in occ_cols:
+                conn.execute(text("ALTER TABLE occupants ADD COLUMN partial_paid_amount NUMERIC(10, 2) NOT NULL DEFAULT 0"))
 
         if "transactions" in table_names:
             txn_cols = [c["name"] for c in inspector.get_columns("transactions")]
@@ -183,6 +185,10 @@ def _ensure_all_model_columns() -> None:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN restored_by_user_id INTEGER"))
             if "restore_reason" not in txn_cols:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN restore_reason VARCHAR"))
+            if "prev_last_paid_month" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN prev_last_paid_month DATETIME"))
+            if "prev_partial_paid_amount" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN prev_partial_paid_amount NUMERIC(10, 2)"))
 
         conn.commit()
 
@@ -227,25 +233,40 @@ def _month_index(year: int, month: int) -> int:
     return year * 12 + month
 
 def _compute_expected_dues(occupant: "models.Occupant", as_of: datetime | None = None) -> Decimal:
-    """Estimate outstanding dues using last_paid_month against the current month."""
+    """Estimate outstanding dues using last_paid_month & partial_paid_amount against the current month."""
     reference = as_of or datetime.now()
     base_fee = occupant.monthly_maintenance_fee or Decimal("0.00")
     extra_cars = max(0, int(occupant.car_count or 1) - 1)
     extra_fee = occupant.extra_car_maintenance_fee or Decimal("0.00")
     monthly_fee = base_fee + (extra_fee * extra_cars)
+    partial = Decimal(str(occupant.partial_paid_amount or 0))
 
     if monthly_fee <= 0:
         return Decimal("0.00")
 
     if occupant.last_paid_month is None:
-        # No payment history available: treat current month fee as due.
-        return monthly_fee
+        return max(Decimal("0.00"), monthly_fee - partial)
 
     paid = occupant.last_paid_month
     current_idx = _month_index(reference.year, reference.month)
     paid_idx = _month_index(paid.year, paid.month)
     overdue_months = max(0, current_idx - paid_idx)
-    return monthly_fee * overdue_months
+    gross_dues = monthly_fee * overdue_months
+    return max(Decimal("0.00"), gross_dues - partial)
+
+
+def _compute_payment_status(occupant: "models.Occupant", as_of: datetime | None = None) -> str:
+    """Return one of: 'Overdue', 'Settled', or 'Advance'."""
+    reference = as_of or datetime.now()
+    if occupant.last_paid_month is None:
+        return "Overdue"
+    current_idx = _month_index(reference.year, reference.month)
+    paid_idx = _month_index(occupant.last_paid_month.year, occupant.last_paid_month.month)
+    if paid_idx < current_idx:
+        return "Overdue"
+    if paid_idx > current_idx:
+        return "Advance"
+    return "Settled"
 
 @app.get("/")
 def read_root():
@@ -271,6 +292,7 @@ def get_tenants(
         occupant.extra_car_charges = extra_fee * extra_cars
         occupant.total_monthly_maintenance = base_fee + occupant.extra_car_charges
         occupant.expected_dues = _compute_expected_dues(occupant)
+        occupant.payment_status = _compute_payment_status(occupant)
     return occupants
 
 
@@ -465,6 +487,20 @@ def create_transaction(
     user: models.User = Depends(require_admin),
 ):
     payload = transaction.model_dump()
+    if payload.get("type") != models.TransactionType.TRANSFER:
+        if payload.get("credited_to") in ("Ali", "Asif"):
+            raise HTTPException(
+                status_code=400,
+                detail="Ali and Asif are storage custodians only and cannot receive inflows or pay outflows. Use a Transfer instead.",
+            )
+        if payload.get("type") == models.TransactionType.INFLOW and payload.get("category") == models.TransactionCategory.maintenance:
+            if payload.get("credited_to") and payload.get("credited_to") != "Naveed":
+                raise HTTPException(status_code=400, detail="Maintenance receiving is handled only by Naveed.")
+            payload["credited_to"] = "Naveed"
+        if payload.get("type") == models.TransactionType.INFLOW and payload.get("category") == models.TransactionCategory.ad_revenue:
+            if payload.get("credited_to") and payload.get("credited_to") != "Dilshad":
+                raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
+            payload["credited_to"] = "Dilshad"
     if not payload.get("generated_by"):
         payload["generated_by"] = user.username
     is_super = user.role == models.UserRole.super_admin

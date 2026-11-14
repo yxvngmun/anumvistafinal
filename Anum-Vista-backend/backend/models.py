@@ -87,6 +87,7 @@ class Occupant(Base):
     extra_car_maintenance_fee = Column(Numeric(10, 2), nullable=False, default=2000.0)
     status = Column(String, nullable=False, default="occupied") # "occupied" or "vacant"
     last_paid_month = Column(DateTime, nullable=True) # Tracks the latest month they have fully paid till
+    partial_paid_amount = Column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
 
     # Tenant details for rented units
     is_rental = Column(Boolean, nullable=False, default=False)
@@ -132,6 +133,8 @@ class Transaction(Base):
     restored_at = Column(DateTime, nullable=True)
     restored_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     restore_reason = Column(String, nullable=True)
+    prev_last_paid_month = Column(DateTime, nullable=True)
+    prev_partial_paid_amount = Column(Numeric(10, 2), nullable=True)
 
     occupant = relationship("Occupant", back_populates="transactions")
     submitted_by = relationship("User", foreign_keys=[submitted_by_user_id])

@@ -30,6 +30,7 @@ interface ParsedAuditDetails {
   reason?: string;
   date?: string;
   received_at?: string;
+  remaining_overdue?: string;
 }
 
 const parseAuditDetails = (raw: string | null): ParsedAuditDetails | null => {
@@ -136,7 +137,10 @@ export default function AuditLogPage() {
               const tags: string[] = [];
               if (d?.unit_no) tags.push(`Flat ${d.unit_no}`);
               if (subject) tags.push(subject);
-              if (d?.amount) tags.push(`₨ ${Number(d.amount).toLocaleString("en-PK")}`);
+              if (d?.amount) tags.push(`Collected: ₨ ${Number(d.amount).toLocaleString("en-PK")}`);
+              if (d?.remaining_overdue && Number(d.remaining_overdue) > 0) {
+                tags.push(`Remaining Overdue: ₨ ${Number(d.remaining_overdue).toLocaleString("en-PK")}`);
+              }
               if (d?.months) tags.push(`Months: ${d.months}`);
               if (d?.period_label) tags.push(`Period: ${d.period_label}`);
               if (d?.received_by) tags.push(`Received by: ${d.received_by}`);

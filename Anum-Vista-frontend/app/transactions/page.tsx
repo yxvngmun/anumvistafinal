@@ -15,6 +15,7 @@ type StatusFilter = "ALL" | "pending" | "approved" | "restored" | "rejected" | "
 type YearFilter = "ALL" | number;
 
 const TREASURERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"];
+const OPERATIONAL_TREASURERS = ["Naveed", "Dilshad", "Danish"];
 
 const fmt = (v: string | number) =>
   `₨ ${Number(v).toLocaleString("en-PK", { maximumFractionDigits: 0 })}`;
@@ -609,7 +610,7 @@ function TransactionsContent() {
                       className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
                     >
                       <option value="">Select Treasurer...</option>
-                      {TREASURERS.map((t) => <option key={t} value={t}>{t}</option>)}
+                      {OPERATIONAL_TREASURERS.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>

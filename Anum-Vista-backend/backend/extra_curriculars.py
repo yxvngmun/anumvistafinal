@@ -367,6 +367,8 @@ def collect_extra_curricular(
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+    if payload.credited_to in ("Ali", "Asif"):
+        raise HTTPException(status_code=400, detail="Ali and Asif are storage custodians only and cannot receive direct inflows.")
     if payload.credited_to not in TREASURER_HOLDERS:
         raise HTTPException(status_code=400, detail=f"Invalid treasurer. Must be one of: {TREASURER_HOLDERS}")
     if payload.billing_cycle not in ("quarterly", "half_yearly", "yearly", "one_time"):
@@ -394,6 +396,9 @@ def collect_extra_curricular(
             )
             db.add(src)
             db.flush()
+
+    if src.source_type == "advert" and payload.credited_to != "Dilshad":
+        raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
 
     is_super = user.role == models.UserRole.super_admin
     category = (
@@ -458,3 +463,4 @@ def collect_extra_curricular(
     db.commit()
     db.refresh(txn)
     return txn
+

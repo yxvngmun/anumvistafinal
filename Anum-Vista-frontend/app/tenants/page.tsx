@@ -24,23 +24,29 @@ const formatMonthDisplay = (keyOrLabel: string): string => {
   return keyOrLabel;
 };
 
-const computeStatus = (t: Occupant): "Overdue" | "Settled" => {
+const computeStatus = (t: Occupant): "Overdue" | "Settled" | "Advance" => {
+  if (t.payment_status === "Advance" || t.payment_status === "Settled" || t.payment_status === "Overdue") {
+    return t.payment_status;
+  }
   if (!t.last_paid_month) return "Overdue";
   const now = new Date();
   const cur = new Date(now.getFullYear(), now.getMonth(), 1);
   const lp = new Date(t.last_paid_month);
   if (Number.isNaN(lp.getTime())) return "Overdue";
-  return new Date(lp.getFullYear(), lp.getMonth(), 1) >= cur ? "Settled" : "Overdue";
+  const paidMonth = new Date(lp.getFullYear(), lp.getMonth(), 1);
+  if (paidMonth < cur) return "Overdue";
+  if (paidMonth > cur) return "Advance";
+  return "Settled";
 };
 
-const DEFAULT_TREASURERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"];
+const MAINTENANCE_RECEIVER = "Naveed";
 
 export default function TenantsPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "OVERDUE" | "SETTLED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "OVERDUE" | "SETTLED" | "ADVANCE">("ALL");
   const [selectedTenant, setSelectedTenant] = useState<Occupant | null>(null);
   const [editingTenant, setEditingTenant] = useState<Occupant | null>(null);
   const [editName, setEditName] = useState("");
@@ -53,9 +59,8 @@ export default function TenantsPage() {
   const [tenantCnic, setTenantCnic] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [treasurers, setTreasurers] = useState<string[]>(DEFAULT_TREASURERS);
-  const [creditedTo, setCreditedTo] = useState(DEFAULT_TREASURERS[0]);
-  const [generatedBy] = useState<"Naveed" | "Dilshad" | "System">("System");
+  const [creditedTo] = useState<string>(MAINTENANCE_RECEIVER);
+  const [generatedBy] = useState<"Naveed" | "Dilshad" | "System">("Naveed");
   const [paymentMode, setPaymentMode] = useState<string>("cash");
   const [autoAllocateMode, setAutoAllocateMode] = useState(false);
   const [autoAmount, setAutoAmount] = useState("");
@@ -63,6 +68,9 @@ export default function TenantsPage() {
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
   const [unpaidMonths, setUnpaidMonths] = useState<UnpaidMonth[]>([]);
+  const [unpaidTotalOverdue, setUnpaidTotalOverdue] = useState<number>(0);
+  const [unpaidPartialCredit, setUnpaidPartialCredit] = useState<number>(0);
+  const [manualAmount, setManualAmount] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Receipts history & Super Admin Restore
@@ -79,24 +87,24 @@ export default function TenantsPage() {
   });
 
   useEffect(() => {
-    api.getTreasurers().then((resp) => {
-      if (resp.treasurers?.length) {
-        setTreasurers(resp.treasurers);
-        setCreditedTo(resp.treasurers[0]);
-      }
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (!selectedTenant) {
       setUnpaidMonths([]);
       setSelectedMonths(new Set());
+      setManualAmount("");
+      setUnpaidTotalOverdue(0);
+      setUnpaidPartialCredit(0);
       setAutoResult(null);
       return;
     }
     api.getUnpaidMonths(selectedTenant.id).then((r) => {
       setUnpaidMonths(r.months);
-      if (r.months.length > 0) setSelectedMonths(new Set([r.months[0].month_key]));
+      setUnpaidTotalOverdue(Number(r.total_overdue || selectedTenant.expected_dues || 0));
+      setUnpaidPartialCredit(Number(r.partial_paid_amount || 0));
+      if (r.months.length > 0) {
+        setSelectedMonths(new Set([r.months[0].month_key]));
+        const firstAmt = Number(r.months[0].remaining_amount ?? selectedTenant.total_monthly_maintenance ?? selectedTenant.monthly_maintenance_fee ?? 0);
+        setManualAmount(firstAmt > 0 ? String(firstAmt) : "");
+      }
     }).catch(() => {});
   }, [selectedTenant]);
 
@@ -117,7 +125,8 @@ export default function TenantsPage() {
       const matchStatus =
         statusFilter === "ALL" ||
         (statusFilter === "OVERDUE" && st === "Overdue") ||
-        (statusFilter === "SETTLED" && st === "Settled");
+        (statusFilter === "SETTLED" && st === "Settled") ||
+        (statusFilter === "ADVANCE" && st === "Advance");
       return matchSearch && matchStatus;
     });
   }, [tenants, search, statusFilter]);
@@ -184,6 +193,15 @@ export default function TenantsPage() {
     });
   };
 
+  const sumSelectedMonths = (keys: Set<string>) => {
+    return unpaidMonths
+      .filter((m) => keys.has(m.month_key))
+      .reduce((acc, m) => {
+        const fallbackFee = Number(selectedTenant?.total_monthly_maintenance || selectedTenant?.monthly_maintenance_fee || 0);
+        return acc + Number(m.remaining_amount ?? m.monthly_fee ?? fallbackFee);
+      }, 0);
+  };
+
   const handleToggleMonth = (targetIdx: number) => {
     if (unpaidMonths.length === 0) return;
     const targetKey = unpaidMonths[targetIdx].month_key;
@@ -191,19 +209,19 @@ export default function TenantsPage() {
     const isLastSelected = targetIdx === selectedMonths.size - 1;
 
     // Dues condition: must clear chronologically starting from earliest unpaid month
+    const next = new Set<string>();
     if (isChecked && isLastSelected && selectedMonths.size > 1) {
-      const next = new Set<string>();
       for (let i = 0; i < targetIdx; i++) {
         next.add(unpaidMonths[i].month_key);
       }
-      setSelectedMonths(next);
     } else {
-      const next = new Set<string>();
       for (let i = 0; i <= targetIdx; i++) {
         next.add(unpaidMonths[i].month_key);
       }
-      setSelectedMonths(next);
     }
+    setSelectedMonths(next);
+    const nextSum = sumSelectedMonths(next);
+    setManualAmount(nextSum > 0 ? String(nextSum) : "");
   };
 
   const handleSubmitPayment = async () => {
@@ -217,7 +235,7 @@ export default function TenantsPage() {
         await api.autoAllocatePayment({
           occupant_id: selectedTenant.id,
           amount: autoAmount,
-          credited_to: creditedTo,
+          credited_to: MAINTENANCE_RECEIVER,
           payment_mode: paymentMode,
           generated_by: generatedBy,
         });
@@ -226,14 +244,17 @@ export default function TenantsPage() {
         if (selectedMonths.size === 0) {
           throw new Error("Please select at least one month");
         }
+        const amtNum = Number(manualAmount);
+        if (!manualAmount || Number.isNaN(amtNum) || amtNum <= 0) {
+          throw new Error("Enter a valid payment amount");
+        }
         const sortedKeys = Array.from(selectedMonths).sort();
         const formattedMonthNames = sortedKeys.map(formatMonthDisplay).join(", ");
-        const total = selectedMonths.size * Number(selectedTenant.total_monthly_maintenance || selectedTenant.monthly_maintenance_fee);
         await api.createReceiptV2({
           occupant_id: selectedTenant.id,
           months: sortedKeys,
-          amount: total.toString(),
-          credited_to: creditedTo,
+          amount: amtNum.toFixed(2),
+          credited_to: MAINTENANCE_RECEIVER,
           payment_mode: paymentMode,
           generated_by: generatedBy,
         });
@@ -342,7 +363,7 @@ export default function TenantsPage() {
 
         {/* Segmented status filter */}
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] p-1 rounded-lg border border-slate-200 dark:border-white/10">
-          {(["ALL", "OVERDUE", "SETTLED"] as const).map((s) => (
+          {(["ALL", "OVERDUE", "SETTLED", "ADVANCE"] as const).map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -352,7 +373,7 @@ export default function TenantsPage() {
                   : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
               }`}
             >
-              {s === "ALL" ? "All Units" : s === "OVERDUE" ? "Overdue" : "Settled"}
+              {s === "ALL" ? "All Units" : s === "OVERDUE" ? "Overdue" : s === "SETTLED" ? "Settled" : "Advance"}
             </button>
           ))}
         </div>
@@ -484,6 +505,8 @@ export default function TenantsPage() {
                           className={`rounded-full px-2.5 py-1 text-xs font-bold border ${
                             status === "Settled"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
+                              : status === "Advance"
+                              ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/20"
                               : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20"
                           }`}
                         >
@@ -604,18 +627,25 @@ export default function TenantsPage() {
                 )}
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
+                {unpaidTotalOverdue > 0 && (
+                  <div className="rounded-lg border border-rose-200 dark:border-rose-500/20 bg-rose-50/70 dark:bg-rose-500/10 px-3 py-2 text-xs flex items-center justify-between">
+                    <span className="font-semibold text-rose-800 dark:text-rose-300">Total Current Overdue:</span>
+                    <span className="font-mono font-bold text-rose-700 dark:text-rose-300">{fmt(unpaidTotalOverdue)}</span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
                     Select Months (Month & Year)
                   </label>
                   <span className="text-xs text-slate-500 dark:text-zinc-400">
-                    Sequential selection from earliest due
+                    Sequential selection from earliest unpaid
                   </span>
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.02] p-2 space-y-1">
                   {unpaidMonths.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-zinc-400 p-2">No past unpaid months recorded. Advance payment can be logged.</p>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400 p-2">All available months for this period are paid.</p>
                   ) : (
                     unpaidMonths.map((m, idx) => {
                       const checked = selectedMonths.has(m.month_key);
@@ -629,17 +659,24 @@ export default function TenantsPage() {
                               : "hover:bg-slate-100 dark:hover:bg-white/[0.04] border border-transparent"
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                              {m.label || formatMonthDisplay(m.month_key)}
-                            </span>
-                            {m.is_due ? (
-                              <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-500/20">
-                                Due
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                                {m.label || formatMonthDisplay(m.month_key)}
                               </span>
-                            ) : (
-                              <span className="text-xs font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded border border-sky-200 dark:border-sky-500/20">
-                                Advance
+                              {m.is_due ? (
+                                <span className="text-xs font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-500/20">
+                                  Due
+                                </span>
+                              ) : (
+                                <span className="text-xs font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded border border-sky-200 dark:border-sky-500/20">
+                                  Advance
+                                </span>
+                              )}
+                            </div>
+                            {m.is_partial && (
+                              <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                Paid: {fmt(m.paid_amount || 0)} · Remaining: {fmt(m.remaining_amount || 0)}
                               </span>
                             )}
                           </div>
@@ -654,6 +691,32 @@ export default function TenantsPage() {
                     })
                   )}
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
+                      Amount Collecting (PKR)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={manualAmount}
+                      onChange={(e) => setManualAmount(e.target.value)}
+                      placeholder="Enter amount received"
+                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-3.5 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                    />
+                  </div>
+                  {unpaidTotalOverdue > 0 && (
+                    <div className="rounded-lg bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-xs">
+                      <div className="text-slate-500 dark:text-zinc-400">Remaining Overdue After Payment</div>
+                      <div className="font-mono font-bold text-sm text-slate-900 dark:text-white">
+                        {fmt(Math.max(0, unpaidTotalOverdue - Number(manualAmount || 0)))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {selectedMonths.size > 0 && (
                   <div className="rounded-lg bg-slate-100 dark:bg-white/[0.04] p-3 text-sm flex items-center justify-between">
                     <span className="text-slate-600 dark:text-zinc-400 font-medium">
@@ -671,17 +734,14 @@ export default function TenantsPage() {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
-                  Treasurer / Custodian
+                  Received By (Treasurer)
                 </label>
-                <select
-                  value={creditedTo}
-                  onChange={(e) => setCreditedTo(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
-                >
-                  {treasurers.map((tr) => (
-                    <option key={tr} value={tr}>{tr}</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={`${creditedTo} (Maintenance Receiver)`}
+                  readOnly
+                  className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3.5 py-2.5 text-sm font-semibold text-slate-700 dark:text-zinc-300 outline-none cursor-not-allowed"
+                />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">

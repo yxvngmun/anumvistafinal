@@ -9,7 +9,7 @@ import type { ExtraCurricularSourceSummary, Transaction } from "@/lib/types";
 const fmt = (v: string | number) =>
   `₨ ${Number(v || 0).toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
 
-const DEFAULT_TREASURERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"];
+const DEFAULT_TREASURERS = ["Naveed", "Dilshad", "Danish"];
 
 const CYCLE_LABELS: Record<string, string> = {
   quarterly: "Quarterly",
@@ -51,11 +51,11 @@ export default function ExtraCurricularsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Treasurers
+  // Treasurers (operational receivers only; Ali & Asif are storage custodians only)
   const [treasurers, setTreasurers] = useState<string[]>(DEFAULT_TREASURERS);
   useEffect(() => {
     api.getTreasurers().then((r) => {
-      if (r.treasurers?.length) setTreasurers(r.treasurers);
+      if (r.operational_treasurers?.length) setTreasurers(r.operational_treasurers);
     }).catch(() => {});
   }, []);
 
@@ -110,7 +110,8 @@ export default function ExtraCurricularsPage() {
     setPeriodLabel(defaultPeriodForCycle(cycle, selectedYear || new Date().getFullYear()));
     setCollectAmount("");
     setCollectDate(new Date().toISOString().split("T")[0]);
-    setCreditedTo(treasurers[0] || DEFAULT_TREASURERS[0]);
+    const isAdv = src?.source_type === "advert";
+    setCreditedTo(isAdv ? "Dilshad" : (treasurers[0] || DEFAULT_TREASURERS[0]));
     setPaymentMode("cash");
     setNotes("");
     setCollectOpen(true);
@@ -123,6 +124,9 @@ export default function ExtraCurricularsPage() {
       const cycle = (match.billing_cycle as "quarterly" | "half_yearly" | "yearly" | "one_time") || "yearly";
       setBillingCycle(cycle);
       setPeriodLabel(defaultPeriodForCycle(cycle, selectedYear || new Date().getFullYear()));
+      if (match.source_type === "advert") {
+        setCreditedTo("Dilshad");
+      }
     } else if (code === "other") {
       setBillingCycle("one_time");
       setPeriodLabel(defaultPeriodForCycle("one_time", selectedYear || new Date().getFullYear()));
@@ -718,15 +722,24 @@ export default function ExtraCurricularsPage() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1">
                   Credited To (Treasurer)
                 </label>
-                <select
-                  value={creditedTo}
-                  onChange={(e) => setCreditedTo(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-sm text-slate-900 dark:text-white"
-                >
-                  {treasurers.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                {sources.find((s) => s.code === selectedSourceCode)?.source_type === "advert" ? (
+                  <input
+                    type="text"
+                    value="Dilshad (Advert Receiver Only)"
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 cursor-not-allowed"
+                  />
+                ) : (
+                  <select
+                    value={creditedTo}
+                    onChange={(e) => setCreditedTo(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-sm text-slate-900 dark:text-white"
+                  >
+                    {treasurers.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -895,3 +908,4 @@ export default function ExtraCurricularsPage() {
     </div>
   );
 }
+

@@ -21,6 +21,9 @@ except ImportError:
 
 router = APIRouter()
 TREASURER_HOLDERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
+OPERATIONAL_TREASURERS = ["Naveed", "Dilshad", "Danish"]
+MAINTENANCE_RECEIVER = "Naveed"
+ADVERT_RECEIVER = "Dilshad"
 
 def _seed_users(db: Session):
     accounts = [
@@ -61,34 +64,78 @@ def _notify(db, user_id, ntype, title, message, txn_id=None):
 def _month_index(year, month):
     return year * 12 + month
 
+def _next_month(d: date) -> date:
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
+def _occupant_monthly_fee(occupant: "models.Occupant") -> Decimal:
+    st = (occupant.status or "occupied").lower()
+    base = Decimal("4000.00") if st == "vacant" else Decimal("5500.00")
+    extra_cars = max(0, int(occupant.car_count or 1) - 1)
+    extra_fee = occupant.extra_car_maintenance_fee if occupant.extra_car_maintenance_fee is not None else Decimal("2000.00")
+    return base + (Decimal(str(extra_fee)) * extra_cars)
+
+
+def _compute_remaining_overdue(occupant: "models.Occupant") -> Decimal:
+    now = datetime.now()
+    monthly_fee = _occupant_monthly_fee(occupant)
+    partial = Decimal(str(occupant.partial_paid_amount or 0))
+    if monthly_fee <= 0:
+        return Decimal("0.00")
+    if occupant.last_paid_month is None:
+        return max(Decimal("0.00"), monthly_fee - partial)
+    curr_idx = _month_index(now.year, now.month)
+    paid_idx = _month_index(occupant.last_paid_month.year, occupant.last_paid_month.month)
+    overdue_months = max(0, curr_idx - paid_idx)
+    return max(Decimal("0.00"), (monthly_fee * overdue_months) - partial)
+
+
+def _apply_maintenance_payment(occupant: "models.Occupant", amount: Decimal, txn: "models.Transaction") -> None:
+    """Advance last_paid_month for each full monthly_fee covered and keep remainder in partial_paid_amount."""
+    txn.prev_last_paid_month = occupant.last_paid_month
+    txn.prev_partial_paid_amount = Decimal(str(occupant.partial_paid_amount or 0))
+
+    monthly_fee = _occupant_monthly_fee(occupant)
+    if monthly_fee <= 0:
+        return
+
+    available = Decimal(str(amount)) + Decimal(str(occupant.partial_paid_amount or 0))
+    now = datetime.now()
+    if occupant.last_paid_month is None:
+        cursor = date(now.year, now.month, 1)
+    else:
+        cursor = _next_month(date(occupant.last_paid_month.year, occupant.last_paid_month.month, 1))
+
+    new_last_paid = occupant.last_paid_month
+    while available >= monthly_fee:
+        new_last_paid = datetime(cursor.year, cursor.month, 1)
+        available -= monthly_fee
+        cursor = _next_month(cursor)
+
+    occupant.last_paid_month = new_last_paid
+    occupant.partial_paid_amount = available
+
+
 def _get_unpaid_months(occupant):
+    """Return all unpaid overdue months plus remaining advance months of the year (and next year in December)."""
     now = datetime.now()
     current = date(now.year, now.month, 1)
-    months = []
+
     if occupant.last_paid_month is None:
-        months.append(current)
-        return months
-    paid = occupant.last_paid_month
-    cursor = date(paid.year, paid.month, 1)
-    # Move to next month after last paid
-    if cursor.month == 12:
-        cursor = date(cursor.year + 1, 1, 1)
+        cursor = current
     else:
-        cursor = date(cursor.year, cursor.month + 1, 1)
-    while cursor <= current:
+        paid = occupant.last_paid_month
+        cursor = _next_month(date(paid.year, paid.month, 1))
+
+    end_year = now.year + 1 if now.month == 12 else max(now.year, cursor.year)
+    end_date = date(end_year, 12, 1)
+
+    months = []
+    while cursor <= end_date:
         months.append(cursor)
-        if cursor.month == 12:
-            cursor = date(cursor.year + 1, 1, 1)
-        else:
-            cursor = date(cursor.year, cursor.month + 1, 1)
-    # If resident is all caught up, provide next 3 upcoming months for advance payments
-    if not months:
-        for _ in range(3):
-            months.append(cursor)
-            if cursor.month == 12:
-                cursor = date(cursor.year + 1, 1, 1)
-            else:
-                cursor = date(cursor.year, cursor.month + 1, 1)
+        cursor = _next_month(cursor)
     return months
 
 # ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -128,7 +175,12 @@ def change_password(
 
 @router.get("/api/treasurers")
 def get_treasurers(user: models.User = Depends(require_admin)):
-    return {"treasurers": TREASURER_HOLDERS}
+    return {
+        "treasurers": TREASURER_HOLDERS,
+        "operational_treasurers": OPERATIONAL_TREASURERS,
+        "maintenance_receiver": MAINTENANCE_RECEIVER,
+        "advert_receiver": ADVERT_RECEIVER,
+    }
 
 # ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 @router.get("/api/notifications", response_model=List[schemas.NotificationOut])
@@ -276,11 +328,11 @@ def approve_transaction(txn_id: int, db: Session = Depends(get_db),
 
     _apply_treasury_effect(db, txn)
 
-    # Update occupant last_paid_month
+    # Update occupant last_paid_month & partial_paid_amount
     if txn.occupant_id and txn.category == models.TransactionCategory.maintenance:
         occupant = db.query(models.Occupant).filter(models.Occupant.id == txn.occupant_id).first()
-        if occupant and (occupant.last_paid_month is None or txn.date > occupant.last_paid_month):
-            occupant.last_paid_month = txn.date
+        if occupant:
+            _apply_maintenance_payment(occupant, txn.amount, txn)
             db.add(occupant)
 
     _audit(db, models.AuditAction.approved, "transaction", txn.id, user, {
@@ -427,17 +479,31 @@ def restore_transaction(
         if occupant:
             resident_name = occupant.name
             unit_no = occupant.unit.unit_no if occupant.unit else None
-            latest_other = (
-                db.query(func.max(models.Transaction.date))
+            newer_approved = (
+                db.query(models.Transaction.id)
                 .filter(
                     models.Transaction.occupant_id == txn.occupant_id,
                     models.Transaction.category == models.TransactionCategory.maintenance,
                     models.Transaction.status == models.TransactionStatus.approved,
-                    models.Transaction.id != txn.id,
+                    models.Transaction.id > txn.id,
                 )
-                .scalar()
+                .first()
             )
-            occupant.last_paid_month = latest_other
+            if not newer_approved and (txn.prev_last_paid_month is not None or txn.prev_partial_paid_amount is not None):
+                occupant.last_paid_month = txn.prev_last_paid_month
+                occupant.partial_paid_amount = txn.prev_partial_paid_amount or Decimal("0.00")
+            else:
+                latest_other = (
+                    db.query(func.max(models.Transaction.date))
+                    .filter(
+                        models.Transaction.occupant_id == txn.occupant_id,
+                        models.Transaction.category == models.TransactionCategory.maintenance,
+                        models.Transaction.status == models.TransactionStatus.approved,
+                        models.Transaction.id != txn.id,
+                    )
+                    .scalar()
+                )
+                occupant.last_paid_month = latest_other
             db.add(occupant)
 
     txn.status = models.TransactionStatus.restored
@@ -524,20 +590,35 @@ def get_unpaid_months(occupant_id: int, db: Session = Depends(get_db),
     if not occupant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     unpaid = _get_unpaid_months(occupant)
+    monthly_fee = _occupant_monthly_fee(occupant)
+    partial_paid = Decimal(str(occupant.partial_paid_amount or 0))
+    total_overdue = _compute_remaining_overdue(occupant)
+
     month_names = ["", "January", "February", "March", "April", "May", "June",
                    "July", "August", "September", "October", "November", "December"]
     now = datetime.now()
     result = []
-    for d in unpaid:
+    for idx, d in enumerate(unpaid):
         key = f"{d.year}-{d.month:02d}"
         is_due = (d.year < now.year) or (d.year == now.year and d.month <= now.month)
+        paid_for_month = min(monthly_fee, partial_paid) if (idx == 0 and partial_paid > 0) else Decimal("0.00")
+        rem_for_month = max(Decimal("0.00"), monthly_fee - paid_for_month)
         result.append(schemas.UnpaidMonth(
             month_key=key,
             label=f"{month_names[d.month]} {d.year}",
             year=d.year,
             is_due=is_due,
+            monthly_fee=monthly_fee,
+            paid_amount=paid_for_month,
+            remaining_amount=rem_for_month,
+            is_partial=paid_for_month > 0,
         ))
-    return schemas.UnpaidMonthsOut(months=result)
+    return schemas.UnpaidMonthsOut(
+        monthly_fee=monthly_fee,
+        partial_paid_amount=partial_paid,
+        total_overdue=total_overdue,
+        months=result,
+    )
 
 # ─── DUES-FIRST MULTI-MONTH RECEIPT ──────────────────────────────────────────
 @router.post("/api/receipts", response_model=schemas.ReceiptOut, status_code=201)
@@ -547,10 +628,12 @@ def create_receipt_v2(payload: schemas.ReceiptCreate, db: Session = Depends(get_
     occupant = db.query(models.Occupant).filter(models.Occupant.id == payload.occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    if payload.credited_to not in TREASURER_HOLDERS:
-        raise HTTPException(status_code=400, detail=f"Invalid treasurer. Must be one of: {TREASURER_HOLDERS}")
+    if payload.credited_to != MAINTENANCE_RECEIVER:
+        raise HTTPException(status_code=400, detail=f"Maintenance receiving is handled only by {MAINTENANCE_RECEIVER}.")
     if not payload.months:
         raise HTTPException(status_code=400, detail="At least one month must be selected")
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
 
     # Parse and sort selected months
     selected = []
@@ -634,16 +717,19 @@ def create_receipt_v2(payload: schemas.ReceiptCreate, db: Session = Depends(get_
 
     if is_super:
         # Super-admin receipts skip the approval queue: log straight into inflow,
-        # credit the treasurer, and advance last_paid_month immediately.
+        # credit Naveed, and advance last_paid_month + partial_paid_amount immediately.
         _apply_treasury_effect(db, db_txn)
-        if occupant and (occupant.last_paid_month is None or db_txn.date > occupant.last_paid_month):
-            occupant.last_paid_month = db_txn.date
-            db.add(occupant)
+        _apply_maintenance_payment(occupant, payload.amount, db_txn)
+        db.add(occupant)
+        rem_overdue = _compute_remaining_overdue(occupant)
         rich_details = {
             "unit_no": unit_label,
             "resident_name": occupant.name,
+            "tenant_name": occupant.tenant_name if occupant.is_rental else None,
             "months": month_labels,
             "amount": str(payload.amount),
+            "remaining_overdue": str(rem_overdue),
+            "partial_paid_amount": str(occupant.partial_paid_amount or Decimal("0.00")),
             "received_by": db_txn.generated_by,
             "credited_to": payload.credited_to,
             "payment_mode": payload.payment_mode,
@@ -690,22 +776,18 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
     occupant = db.query(models.Occupant).filter(models.Occupant.id == payload.occupant_id).first()
     if not occupant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    if payload.credited_to not in TREASURER_HOLDERS:
-        raise HTTPException(status_code=400, detail=f"Invalid treasurer. Must be one of: {TREASURER_HOLDERS}")
+    if payload.credited_to != MAINTENANCE_RECEIVER:
+        raise HTTPException(status_code=400, detail=f"Maintenance receiving is handled only by {MAINTENANCE_RECEIVER}.")
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
-    extra_cars = max(0, int(occupant.car_count or 1) - 1)
-    extra_fee = occupant.extra_car_maintenance_fee or Decimal("0.00")
-    base_fee = occupant.monthly_maintenance_fee or Decimal("0.00")
-    monthly_fee = base_fee + (extra_fee * extra_cars)
-
+    monthly_fee = _occupant_monthly_fee(occupant)
     if monthly_fee <= 0:
         raise HTTPException(status_code=400, detail="Monthly fee is zero — cannot allocate")
 
-    # Build list of months to cover: unpaid first, then future
+    # Build list of months to cover: unpaid first, then future (including existing partial credit)
     unpaid = _get_unpaid_months(occupant)
-    remaining = payload.amount
+    remaining = Decimal(str(payload.amount)) + Decimal(str(occupant.partial_paid_amount or 0))
     months_covered: list[schemas.AllocatedMonth] = []
     month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -762,7 +844,7 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
     month_labels = ", ".join(month_keys)
     selected_dates = [date(int(k.split("-")[0]), int(k.split("-")[1]), 1) for k in month_keys]
     latest_month = selected_dates[-1]
-    total_applied = sum(mc.amount for mc in months_covered)
+    total_applied = payload.amount
 
     receipt_no = f"RCPT-{selected_dates[0].year}{selected_dates[0].month:02d}-{payload.occupant_id}-{int(datetime.utcnow().timestamp())}"
     unit_label = occupant.unit.unit_no if occupant.unit else str(occupant.unit_id or "")
@@ -790,14 +872,17 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
 
     if is_super:
         _apply_treasury_effect(db, db_txn)
-        if occupant.last_paid_month is None or db_txn.date > occupant.last_paid_month:
-            occupant.last_paid_month = db_txn.date
-            db.add(occupant)
+        _apply_maintenance_payment(occupant, payload.amount, db_txn)
+        db.add(occupant)
+        rem_overdue = _compute_remaining_overdue(occupant)
         rich_details = {
             "unit_no": unit_label,
             "resident_name": occupant.name,
+            "tenant_name": occupant.tenant_name if occupant.is_rental else None,
             "months": month_labels,
             "amount": str(total_applied),
+            "remaining_overdue": str(rem_overdue),
+            "partial_paid_amount": str(occupant.partial_paid_amount or Decimal("0.00")),
             "received_by": db_txn.generated_by,
             "credited_to": payload.credited_to,
             "payment_mode": payload.payment_mode,
@@ -977,7 +1062,10 @@ def get_receipt_pdf(
     if txn.occupant_id:
         occupant = db.query(models.Occupant).filter(models.Occupant.id == txn.occupant_id).first()
         if occupant:
-            occupant_name = occupant.name
+            if occupant.is_rental and occupant.tenant_name:
+                occupant_name = f"Owner: {occupant.name} (Tenant: {occupant.tenant_name})"
+            else:
+                occupant_name = occupant.name
             unit_no = occupant.unit.unit_no if occupant.unit else "—"
 
     clean_ref = str(txn.receipt_no or f"TXN-{txn.id}").strip()
