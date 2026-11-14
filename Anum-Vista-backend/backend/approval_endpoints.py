@@ -103,7 +103,10 @@ def _next_month(d: date) -> date:
 
 def _occupant_monthly_fee(occupant: "models.Occupant") -> Decimal:
     st = (occupant.status or "occupied").lower()
-    base = Decimal("4000.00") if st == "vacant" else Decimal("5500.00")
+    if occupant.monthly_maintenance_fee is not None and occupant.monthly_maintenance_fee > 0:
+        base = Decimal(str(occupant.monthly_maintenance_fee))
+    else:
+        base = Decimal("4000.00") if st == "vacant" else Decimal("5500.00")
     extra_cars = max(0, int(occupant.car_count or 1) - 1)
     extra_fee = occupant.extra_car_maintenance_fee if occupant.extra_car_maintenance_fee is not None else Decimal("2000.00")
     return base + (Decimal(str(extra_fee)) * extra_cars)

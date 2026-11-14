@@ -409,10 +409,12 @@ def update_tenant(
         st = payload.status.strip().lower()
         if st in ("occupied", "vacant"):
             occupant.status = st
-            if st == "vacant":
-                occupant.monthly_maintenance_fee = Decimal("4000.00")
-            else:
-                occupant.monthly_maintenance_fee = Decimal("5500.00")
+            if payload.monthly_maintenance_fee is None:
+                occupant.monthly_maintenance_fee = Decimal("4000.00") if st == "vacant" else Decimal("5500.00")
+    if payload.monthly_maintenance_fee is not None:
+        if payload.monthly_maintenance_fee < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Base fee cannot be negative")
+        occupant.monthly_maintenance_fee = payload.monthly_maintenance_fee
 
     if payload.is_rental is not None:
         occupant.is_rental = payload.is_rental

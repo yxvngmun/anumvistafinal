@@ -442,6 +442,7 @@ export const api = {
       contact?: string;
       cnic?: string;
       status?: "occupied" | "vacant" | string;
+      monthly_maintenance_fee?: string;
       is_rental?: boolean;
       tenant_name?: string;
       tenant_contact?: string;

@@ -53,6 +53,7 @@ export default function TenantsPage() {
   const [editContact, setEditContact] = useState("");
   const [editCnic, setEditCnic] = useState("");
   const [editStatus, setEditStatus] = useState<"occupied" | "vacant">("occupied");
+  const [editBaseFee, setEditBaseFee] = useState("");
   const [isRental, setIsRental] = useState(false);
   const [tenantName, setTenantName] = useState("");
   const [tenantContact, setTenantContact] = useState("");
@@ -137,6 +138,7 @@ export default function TenantsPage() {
     setEditContact(t.contact || t.phone || "");
     setEditCnic(t.cnic || "");
     setEditStatus(((t.status || "occupied").toLowerCase() === "vacant") ? "vacant" : "occupied");
+    setEditBaseFee(String(Number(t.monthly_maintenance_fee || 5500)));
     setIsRental(Boolean(t.is_rental || t.unit?.is_rental || t.tenant_name));
     setTenantName(t.tenant_name || "");
     setTenantContact(t.tenant_contact || "");
@@ -161,6 +163,7 @@ export default function TenantsPage() {
         contact: editContact.trim() || undefined,
         cnic: editCnic.trim() || undefined,
         status: editStatus,
+        monthly_maintenance_fee: editBaseFee !== "" && !Number.isNaN(Number(editBaseFee)) ? Number(editBaseFee).toFixed(2) : undefined,
         is_rental: isRental,
         tenant_name: isRental ? (tenantName.trim() || undefined) : undefined,
         tenant_contact: isRental ? (tenantContact.trim() || undefined) : undefined,
@@ -832,12 +835,32 @@ export default function TenantsPage() {
                 </label>
                 <select
                   value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value as "occupied" | "vacant")}
+                  onChange={(e) => {
+                    const next = e.target.value as "occupied" | "vacant";
+                    setEditStatus(next);
+                    setEditBaseFee(next === "vacant" ? "4000" : "5500");
+                  }}
                   className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white font-semibold"
                 >
-                  <option value="occupied">Occupied (₨ 5,500 base maintenance)</option>
-                  <option value="vacant">Vacant (₨ 4,000 base maintenance)</option>
+                  <option value="occupied">Occupied (Default ₨ 5,500 base)</option>
+                  <option value="vacant">Vacant (Default ₨ 4,000 base)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-zinc-200 mb-1">
+                  Base Maintenance Fee (PKR)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  required
+                  value={editBaseFee}
+                  onChange={(e) => setEditBaseFee(e.target.value)}
+                  placeholder="e.g. 5500"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/[0.04] px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-black dark:focus:border-white"
+                />
               </div>
 
               <div>

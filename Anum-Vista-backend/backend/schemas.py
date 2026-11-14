@@ -207,6 +207,7 @@ class OccupantUpdate(BaseModel):
     contact: Optional[str] = None
     cnic: Optional[str] = None
     status: Optional[str] = None
+    monthly_maintenance_fee: Optional[Decimal] = None
     is_rental: Optional[bool] = None
     tenant_name: Optional[str] = None
     tenant_contact: Optional[str] = None
