@@ -30,20 +30,9 @@ ADVERT_RECEIVER = "Dilshad"
 def _seed_users(db: Session):
     accounts = [
         {"username": "admin", "email": "admin@anumvista.com", "password": "admin123", "role": models.UserRole.admin},
-        {"username": "superadmin", "email": "superadmin@anumvista.com", "password": "super123", "role": models.UserRole.super_admin},
-        {"username": "anumvista", "email": None, "password": "anumvista123", "role": models.UserRole.super_admin},
+        {"username": "naveed", "email": "naveed@anumvista.com", "password": "super123", "role": models.UserRole.super_admin},
+        {"username": "dilshad", "email": "dilshad@anumvista.com", "password": "dilshad@2026", "role": models.UserRole.senior_admin},
     ]
-    # Add unique accounts for treasurers
-    for t in TREASURER_HOLDERS:
-        uname = t.lower() if t in ("Naveed", "Dilshad") else t
-        urole = models.UserRole.senior_admin if t == "Dilshad" else models.UserRole.super_admin
-        upwd = "dilshad@2026" if t == "Dilshad" else f"{t.lower()}123"
-        accounts.append({
-            "username": uname,
-            "email": f"{t.lower()}@anumvista.com",
-            "password": upwd,
-            "role": urole,
-        })
 
     for acct in accounts:
         if not db.query(models.User).filter(func.lower(models.User.username) == acct["username"].lower()).first():
@@ -51,14 +40,11 @@ def _seed_users(db: Session):
                                hashed_password=hash_password(acct["password"]), role=acct["role"]))
     db.flush()
 
-    # Sync Naveed (super_admin, username 'naveed', same password as superadmin)
-    sa_user = db.query(models.User).filter(func.lower(models.User.username) == "superadmin").first()
+    # Ensure Naveed (super_admin, username 'naveed') & Dilshad (senior_admin, username 'dilshad')
     naveed_user = db.query(models.User).filter(func.lower(models.User.username) == "naveed").first()
     if naveed_user:
         naveed_user.username = "naveed"
         naveed_user.role = models.UserRole.super_admin
-        if sa_user and sa_user.hashed_password:
-            naveed_user.hashed_password = sa_user.hashed_password
         db.add(naveed_user)
 
     # Sync Dilshad (senior_admin, username 'dilshad')

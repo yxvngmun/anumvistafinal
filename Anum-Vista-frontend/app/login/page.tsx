@@ -192,9 +192,6 @@ export default function LoginPage() {
 
         {/* Footer Info (High-Contrast for Readability) */}
         <div className="pt-4 text-center space-y-2">
-          <p className="text-xs sm:text-sm text-zinc-400 font-medium">
-            Default super admin: <span className="text-white font-mono font-bold bg-white/10 px-2.5 py-1 rounded-lg">anumvista</span>
-          </p>
           <p className="text-[11px] sm:text-xs text-zinc-500">
             Direct Authentication · Anum Vista Management System
           </p>

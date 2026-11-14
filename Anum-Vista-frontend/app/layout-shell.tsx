@@ -439,31 +439,61 @@ function Sidebar({
   );
 }
 
-export function LayoutShell({ children }: { children: React.ReactNode }) {
+function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === "/login";
   const [collapsed, setCollapsed] = useState(false);
+  const { isLoggingOut } = useAuth();
+
+  if (isLoggingOut) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black text-white flex flex-col items-center justify-center p-6 select-none">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:32px_32px] opacity-40" />
+          <div className="absolute -top-24 -left-24 w-[520px] h-[520px] rounded-full bg-gradient-to-tr from-cyan-950/40 via-blue-950/30 to-transparent blur-[110px]" />
+        </div>
+        <div className="relative z-10 flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-white text-black flex items-center justify-center text-base font-black tracking-tight shadow-xl">
+            AV
+          </div>
+          <div className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-white">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span>Signing out...</span>
+          </div>
+          <p className="text-xs text-zinc-400">
+            Ending your session · Anum Vista Management System
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
+    <div className="flex min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100">
+      <Suspense fallback={null}>
+        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      </Suspense>
+      <main
+        className={`min-h-screen flex-1 overflow-x-hidden ${
+          isLoginPage ? "" : "p-4 sm:p-6 lg:p-8"
+        }`}
+      >
+        <div className={isLoginPage ? "" : "max-w-7xl mx-auto space-y-6"}>
+          <Suspense
+            fallback={<div className="h-32 animate-pulse rounded-xl bg-slate-200 dark:bg-white/5" />}
+          >
+            {children}
+          </Suspense>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export function LayoutShell({ children }: { children: React.ReactNode }) {
+  return (
     <AuthProvider>
-      <div className="flex min-h-screen bg-slate-50 dark:bg-[#090d16] text-slate-900 dark:text-slate-100">
-        <Suspense fallback={null}>
-          <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-        </Suspense>
-        <main
-          className={`min-h-screen flex-1 overflow-x-hidden ${
-            isLoginPage ? "" : "p-4 sm:p-6 lg:p-8"
-          }`}
-        >
-          <div className={isLoginPage ? "" : "max-w-7xl mx-auto space-y-6"}>
-            <Suspense
-              fallback={<div className="h-32 animate-pulse rounded-xl bg-slate-200 dark:bg-white/5" />}
-            >
-              {children}
-            </Suspense>
-          </div>
-        </main>
-      </div>
+      <ShellContent>{children}</ShellContent>
     </AuthProvider>
   );
 }
