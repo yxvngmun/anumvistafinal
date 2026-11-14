@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, hasPermission } from "@/lib/api";
 import type { MonthlyTransactionLine } from "@/lib/types";
 
 const months = [
@@ -59,11 +59,13 @@ export default function MonthlyAnalyticsPage() {
     setMounted(true);
   }, []);
 
+  const canAnalytics = hasPermission(user, "analytics");
+
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
+    if (!authLoading && !canAnalytics) {
       router.push("/tenants");
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, canAnalytics, router]);
 
   const {
     data: report,
@@ -73,7 +75,7 @@ export default function MonthlyAnalyticsPage() {
   } = useQuery({
     queryKey: ["monthly-report", year, month],
     queryFn: () => api.getMonthlyReport(year, month),
-    enabled: user?.role === "super_admin" || user?.role === "senior_admin",
+    enabled: canAnalytics,
   });
 
   const monthLabel = useMemo(
@@ -114,7 +116,7 @@ export default function MonthlyAnalyticsPage() {
       ]
     : [];
 
-  if (authLoading || (user?.role !== "super_admin" && user?.role !== "senior_admin")) return null;
+  if (authLoading || !canAnalytics) return null;
 
   return (
     <div className="space-y-6">

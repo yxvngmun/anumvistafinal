@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, AuditLogItem } from "@/lib/api";
+import { api, AuditLogItem, hasPermission } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 
@@ -62,13 +62,16 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [actorFilter, setActorFilter] = useState("");
 
-  useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
-      router.push("/tenants");
-    }
-  }, [user, authLoading, router]);
+  const canAudit = hasPermission(user, "audit_trail");
 
   useEffect(() => {
+    if (!authLoading && !canAudit) {
+      router.push("/tenants");
+    }
+  }, [canAudit, authLoading, router]);
+
+  useEffect(() => {
+    if (!canAudit) return;
     setLoading(true);
     api
       .getAuditLogs({
@@ -80,9 +83,9 @@ export default function AuditLogPage() {
       .then(setLogs)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [actionFilter, actorFilter]);
+  }, [actionFilter, actorFilter, canAudit]);
 
-  if (authLoading || (user?.role !== "super_admin" && user?.role !== "senior_admin")) return null;
+  if (authLoading || !canAudit) return null;
 
   return (
     <div className="space-y-6">

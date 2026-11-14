@@ -12,12 +12,14 @@ try:
     from backend import models, schemas
     from backend.database import get_db
     from backend.auth import (verify_password, create_access_token, get_current_user,
-                               require_admin, require_senior_or_super, require_super_admin, hash_password)
+                               require_admin, require_senior_or_super, require_super_admin, hash_password,
+                               get_effective_permissions, require_permission)
 except ImportError:
     import models, schemas
     from database import get_db
     from auth import (verify_password, create_access_token, get_current_user,
-                      require_admin, require_senior_or_super, require_super_admin, hash_password)
+                      require_admin, require_senior_or_super, require_super_admin, hash_password,
+                      get_effective_permissions, require_permission)
 
 router = APIRouter()
 TREASURER_HOLDERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
@@ -187,8 +189,17 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     return schemas.TokenResponse(access_token=token, token_type="bearer", role=user.role.value)
 
 @router.get("/api/auth/me", response_model=schemas.UserOut)
-def get_me(user: models.User = Depends(get_current_user)):
-    return user
+def get_me(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return schemas.UserOut(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        permissions=get_effective_permissions(db, user.role),
+    )
 
 @router.post("/api/auth/change-password")
 def change_password(
@@ -622,7 +633,7 @@ def restore_transaction(
 
 # ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
 @router.get("/api/audit-logs", response_model=List[schemas.AuditLogOut])
-def get_audit_logs(db: Session = Depends(get_db), user: models.User = Depends(require_senior_or_super),
+def get_audit_logs(db: Session = Depends(get_db), user: models.User = Depends(require_permission("audit_trail")),
                    limit: int = Query(default=100, ge=1, le=500),
                    offset: int = Query(default=0, ge=0),
                    action: Optional[str] = Query(default=None),

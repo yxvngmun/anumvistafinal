@@ -15,14 +15,28 @@ try:
     from backend.database import engine, get_db
     from backend.approval_endpoints import router as approval_router, _seed_users, _audit
     from backend.extra_curriculars import ec_router, seed_extra_curriculars
-    from backend.auth import require_admin, require_senior_or_super, require_super_admin
+    from backend.auth import (
+        require_admin,
+        require_senior_or_super,
+        require_super_admin,
+        require_permission,
+        get_all_role_permissions,
+        set_role_permissions,
+    )
 except ImportError:
     import models
     import schemas
     from database import engine, get_db
     from approval_endpoints import router as approval_router, _seed_users, _audit
     from extra_curriculars import ec_router, seed_extra_curriculars
-    from auth import require_admin, require_senior_or_super, require_super_admin
+    from auth import (
+        require_admin,
+        require_senior_or_super,
+        require_super_admin,
+        require_permission,
+        get_all_role_permissions,
+        set_role_permissions,
+    )
 
 # Create DB tables
 models.Base.metadata.create_all(bind=engine)
@@ -278,6 +292,37 @@ def _compute_payment_status(occupant: "models.Occupant", as_of: datetime | None 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Anum Vista Property Management API"}
+
+
+@app.get("/api/roles/permissions")
+def get_role_permissions_endpoint(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_super_admin),
+):
+    return get_all_role_permissions(db)
+
+
+@app.put("/api/roles/permissions/{role_name}")
+def update_role_permissions_endpoint(
+    role_name: str,
+    payload: schemas.RolePermissionsUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_super_admin),
+):
+    updated = set_role_permissions(db, role_name, payload.permissions)
+    try:
+        _audit(
+            db,
+            models.AuditAction.verified,
+            "role_permissions",
+            0,
+            user,
+            {"role": role_name, "permissions": updated},
+        )
+        db.commit()
+    except Exception:
+        pass
+    return {"role": role_name, "permissions": updated}
 
 
 @app.get("/api/health")
@@ -656,7 +701,7 @@ def create_transaction(
 @app.get("/api/dashboard/metrics", response_model=schemas.DashboardMetrics)
 def get_dashboard_metrics(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("overview")),
 ):
     now = datetime.now()
     current_month = now.month
@@ -787,7 +832,7 @@ def get_monthly_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("analytics")),
 ):
     # Transaction-based totals (approved only for financial accuracy)
     base = db.query(models.Transaction).filter(
@@ -1000,7 +1045,7 @@ def export_monthly_report_excel(
     year: int = Query(..., ge=2026, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("analytics")),
 ):
     """Export Monthly Summary Sheet / Funds Position in the exact uploaded Excel format."""
     from openpyxl import Workbook
@@ -1237,7 +1282,7 @@ def export_monthly_report_excel(
 @app.get("/api/treasury/current")
 def get_current_treasury_split(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("treasury")),
 ):
     """
     Returns latest known split across the named holders from funds_in_hand_entries.
@@ -1325,7 +1370,7 @@ def get_resident_ledger(
     occupant_id: int,
     year: int = Query(default=None, ge=1900, le=2100),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("reports_ledger")),
 ):
     occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
@@ -1412,7 +1457,7 @@ def get_resident_ledger(
 @app.get("/api/reports/pending-dues", response_model=schemas.PendingDuesReport)
 def get_pending_dues_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("reports_ledger")),
 ):
     now = datetime.now()
     occupants = db.query(models.Occupant).all()
@@ -1453,7 +1498,7 @@ def get_pending_dues_report(
 @app.get("/api/reports/advance-payments", response_model=schemas.AdvancePaymentReport)
 def get_advance_payments_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("reports_ledger")),
 ):
     now = datetime.now()
     current_month_date = datetime(now.year, now.month, 1)
@@ -1487,7 +1532,7 @@ def get_expense_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("reports_ledger")),
 ):
     base = db.query(models.Transaction).filter(
         models.Transaction.type == models.TransactionType.OUTFLOW,

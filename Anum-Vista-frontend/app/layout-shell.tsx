@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useState, useEffect, useRef } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { hasPermission } from "@/lib/api";
 import NotificationBell from "@/components/NotificationBell";
 
 function Sidebar({
@@ -72,31 +73,10 @@ function Sidebar({
 
   const isSuperAdmin = user?.role === "super_admin";
   const isSeniorAdmin = user?.role === "senior_admin";
-  const isManagement = isSuperAdmin || isSeniorAdmin;
 
-  const adminItems = [
+  const allNavItems = [
     {
-      href: "/tenants",
-      label: "Residents",
-      icon: (
-        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-        </svg>
-      ),
-    },
-    {
-      href: "/car-maintenance",
-      label: "Cars and parking",
-      icon: (
-        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11M5 11v6a1 1 0 001 1h1m12-7v6a1 1 0 01-1 1h-1M5 11h14M7.5 14.5a1 1 0 100-2 1 1 0 000 2zm9 0a1 1 0 100-2 1 1 0 000 2z" />
-        </svg>
-      ),
-    },
-  ];
-
-  const superAdminItems = [
-    {
+      perm: "overview",
       href: "/dashboard",
       label: "Overview",
       icon: (
@@ -109,6 +89,7 @@ function Sidebar({
       ),
     },
     {
+      perm: "analytics",
       href: "/analytics",
       label: "Analytics",
       icon: (
@@ -118,6 +99,7 @@ function Sidebar({
       ),
     },
     {
+      perm: "treasury",
       href: "/treasury",
       label: "Treasury",
       icon: (
@@ -127,6 +109,7 @@ function Sidebar({
       ),
     },
     {
+      perm: "extra_curriculars",
       href: "/extra-curriculars",
       label: "Extra Curriculars",
       icon: (
@@ -136,6 +119,7 @@ function Sidebar({
       ),
     },
     {
+      perm: "audit_trail",
       href: "/audit-log",
       label: "Audit Trail",
       icon: (
@@ -144,9 +128,47 @@ function Sidebar({
         </svg>
       ),
     },
+    {
+      perm: "residents",
+      href: "/tenants",
+      label: "Residents",
+      icon: (
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      ),
+    },
+    {
+      perm: "cars_parking",
+      href: "/car-maintenance",
+      label: "Cars and parking",
+      icon: (
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11M5 11v6a1 1 0 001 1h1m12-7v6a1 1 0 01-1 1h-1M5 11h14M7.5 14.5a1 1 0 100-2 1 1 0 000 2zm9 0a1 1 0 100-2 1 1 0 000 2z" />
+        </svg>
+      ),
+    },
   ];
 
-  const navItems = isManagement ? [...superAdminItems, ...adminItems] : adminItems;
+  const navItems = [
+    ...allNavItems.filter((item) => hasPermission(user, item.perm)),
+    ...(isSuperAdmin
+      ? [
+          {
+            perm: "role_management",
+            href: "/role-management",
+            label: "Role Management",
+            icon: (
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            ),
+          },
+        ]
+      : []),
+  ];
+  const canTransactions = hasPermission(user, "transactions");
+  const canReportsLedger = hasPermission(user, "reports_ledger");
 
   return (
     <aside
@@ -216,6 +238,7 @@ function Sidebar({
             })}
 
             {/* Transactions Group */}
+            {canTransactions && (
             <li className="pt-2">
               <button
                 type="button"
@@ -269,9 +292,10 @@ function Sidebar({
                 </ul>
               )}
             </li>
+            )}
 
-            {/* Reports Group (Super Admin & Senior Admin) */}
-            {isManagement && (
+            {/* Reports Group */}
+            {canReportsLedger && (
               <li className="pt-2">
                 <button
                   type="button"

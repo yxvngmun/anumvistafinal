@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, hasPermission } from "@/lib/api";
 import type { Transaction } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
@@ -16,7 +16,7 @@ export default function TreasuryPage() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
-  const isManagement = user?.role === "super_admin" || user?.role === "senior_admin";
+  const isManagement = hasPermission(user, "treasury");
 
   useEffect(() => {
     if (!authLoading && !isManagement) {

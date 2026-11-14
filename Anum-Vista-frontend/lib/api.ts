@@ -112,6 +112,54 @@ export interface AuthUser {
   username: string;
   email: string | null;
   role: "admin" | "senior_admin" | "super_admin";
+  permissions?: Record<string, boolean>;
+}
+
+export type RolePermissionsMap = Record<"senior_admin" | "admin", Record<string, boolean>>;
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "senior_admin" | "super_admin", Record<string, boolean>> = {
+  super_admin: {
+    overview: true,
+    analytics: true,
+    treasury: true,
+    extra_curriculars: true,
+    audit_trail: true,
+    reports_ledger: true,
+    residents: true,
+    cars_parking: true,
+    transactions: true,
+  },
+  senior_admin: {
+    overview: true,
+    analytics: true,
+    treasury: true,
+    extra_curriculars: true,
+    audit_trail: false,
+    reports_ledger: false,
+    residents: true,
+    cars_parking: true,
+    transactions: true,
+  },
+  admin: {
+    overview: false,
+    analytics: false,
+    treasury: false,
+    extra_curriculars: false,
+    audit_trail: false,
+    reports_ledger: false,
+    residents: true,
+    cars_parking: true,
+    transactions: true,
+  },
+};
+
+export function hasPermission(user: AuthUser | null | undefined, key: string): boolean {
+  if (!user) return false;
+  if (user.role === "super_admin") return true;
+  if (user.permissions && key in user.permissions) {
+    return Boolean(user.permissions[key]);
+  }
+  return Boolean(DEFAULT_ROLE_PERMISSIONS[user.role]?.[key]);
 }
 
 export interface LoginResponse {
@@ -525,4 +573,16 @@ export const api = {
     a.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  getRolePermissions: (): Promise<RolePermissionsMap> =>
+    fetchJson<RolePermissionsMap>("/roles/permissions"),
+
+  updateRolePermissions: (
+    role: "senior_admin" | "admin",
+    permissions: Record<string, boolean>,
+  ): Promise<{ role: string; permissions: Record<string, boolean> }> =>
+    fetchJson(`/roles/permissions/${role}`, {
+      method: "PUT",
+      body: JSON.stringify({ permissions }),
+    }),
 };

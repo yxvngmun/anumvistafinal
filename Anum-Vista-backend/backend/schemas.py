@@ -26,9 +26,14 @@ class UserOut(BaseModel):
     username: str
     email: Optional[str] = None
     role: UserRole
+    permissions: dict[str, bool] = {}
 
     class Config:
         from_attributes = True
+
+
+class RolePermissionsUpdate(BaseModel):
+    permissions: dict[str, bool]
 
 # --- Units ---
 class UnitBase(BaseModel):

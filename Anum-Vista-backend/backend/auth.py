@@ -1,6 +1,7 @@
 """
 auth.py — JWT authentication + role-based access for Anum Vista
 """
+import json
 import os, secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -9,6 +10,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 try:
@@ -103,3 +105,123 @@ def require_super_admin(current_user: models.User = Depends(get_current_user)) -
     if current_user.role != models.UserRole.super_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super Admin access required")
     return current_user
+
+
+# ── Dynamic Role Permissions ──────────────────────────────────────────────────
+PERMISSION_KEYS = (
+    "overview",
+    "analytics",
+    "treasury",
+    "extra_curriculars",
+    "audit_trail",
+    "reports_ledger",
+    "residents",
+    "cars_parking",
+    "transactions",
+)
+
+DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
+    "super_admin": {k: True for k in PERMISSION_KEYS},
+    "senior_admin": {
+        "overview": True,
+        "analytics": True,
+        "treasury": True,
+        "extra_curriculars": True,
+        "audit_trail": False,
+        "reports_ledger": False,
+        "residents": True,
+        "cars_parking": True,
+        "transactions": True,
+    },
+    "admin": {
+        "overview": False,
+        "analytics": False,
+        "treasury": False,
+        "extra_curriculars": False,
+        "audit_trail": False,
+        "reports_ledger": False,
+        "residents": True,
+        "cars_parking": True,
+        "transactions": True,
+    },
+}
+
+_role_perms_cache: dict[str, dict[str, bool]] | None = None
+
+
+def get_all_role_permissions(db: Session) -> dict[str, dict[str, bool]]:
+    global _role_perms_cache
+    if _role_perms_cache is not None:
+        return {r: dict(p) for r, p in _role_perms_cache.items()}
+
+    stored: dict[str, dict[str, bool]] = {}
+    try:
+        row = db.execute(text("SELECT value FROM app_settings WHERE key = 'role_permissions'")).first()
+        if row and row[0]:
+            parsed = json.loads(row[0])
+            if isinstance(parsed, dict):
+                stored = parsed
+    except Exception:
+        pass
+
+    merged: dict[str, dict[str, bool]] = {}
+    for role_name in ("senior_admin", "admin"):
+        base = dict(DEFAULT_ROLE_PERMISSIONS[role_name])
+        override = stored.get(role_name)
+        if isinstance(override, dict):
+            for k in PERMISSION_KEYS:
+                if k in override:
+                    base[k] = bool(override[k])
+        merged[role_name] = base
+
+    _role_perms_cache = merged
+    return {r: dict(p) for r, p in merged.items()}
+
+
+def set_role_permissions(db: Session, role_name: str, perms: dict[str, bool]) -> dict[str, bool]:
+    global _role_perms_cache
+    if role_name not in ("senior_admin", "admin"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only senior_admin and admin roles can be edited")
+
+    current = get_all_role_permissions(db)
+    updated_role = dict(current[role_name])
+    for k in PERMISSION_KEYS:
+        if k in perms:
+            updated_role[k] = bool(perms[k])
+    current[role_name] = updated_role
+
+    db.execute(text("CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR PRIMARY KEY, value VARCHAR)"))
+    serialized = json.dumps(current)
+    existing = db.execute(text("SELECT 1 FROM app_settings WHERE key = 'role_permissions'")).first()
+    if existing:
+        db.execute(text("UPDATE app_settings SET value = :v WHERE key = 'role_permissions'"), {"v": serialized})
+    else:
+        db.execute(text("INSERT INTO app_settings (key, value) VALUES ('role_permissions', :v)"), {"v": serialized})
+    db.commit()
+
+    _role_perms_cache = current
+    return dict(updated_role)
+
+
+def get_effective_permissions(db: Session, role: models.UserRole | str) -> dict[str, bool]:
+    role_str = role.value if hasattr(role, "value") else str(role)
+    if role_str == "super_admin":
+        return dict(DEFAULT_ROLE_PERMISSIONS["super_admin"])
+    all_perms = get_all_role_permissions(db)
+    return dict(all_perms.get(role_str, DEFAULT_ROLE_PERMISSIONS["admin"]))
+
+
+def require_permission(perm_key: str):
+    def _dep(
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> models.User:
+        perms = get_effective_permissions(db, current_user.role)
+        if not perms.get(perm_key, False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission '{perm_key}' is required for this resource",
+            )
+        return current_user
+
+    return _dep

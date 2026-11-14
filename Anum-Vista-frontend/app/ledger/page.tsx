@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { api, LedgerOut } from "@/lib/api";
+import { api, LedgerOut, hasPermission } from "@/lib/api";
 import type { Occupant } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 
@@ -21,7 +21,7 @@ const statusStyles: Record<string, string> = {
 export default function LedgerPage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
+  const isSuperAdmin = hasPermission(user, "reports_ledger");
 
   useEffect(() => {
     if (isAuthenticated && user && !isSuperAdmin) {

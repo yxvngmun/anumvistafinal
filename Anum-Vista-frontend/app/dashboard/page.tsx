@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, hasPermission } from "@/lib/api";
 import type { Occupant } from "@/lib/types";
 import {
   CartesianGrid,
@@ -43,11 +43,13 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
+  const canOverview = hasPermission(user, "overview");
+
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
+    if (!authLoading && !canOverview) {
       router.push("/tenants");
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, canOverview, router]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery({
     queryKey: ["dashboard-metrics"],

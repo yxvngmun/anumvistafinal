@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 try:
     from backend import models, schemas
     from backend.database import get_db
-    from backend.auth import require_admin, require_senior_or_super, require_super_admin
+    from backend.auth import require_admin, require_senior_or_super, require_super_admin, require_permission
     from backend.approval_endpoints import TREASURER_HOLDERS, _audit, _notify, _apply_treasury_effect
 except ImportError:
     import models, schemas
     from database import get_db
-    from auth import require_admin, require_senior_or_super, require_super_admin
+    from auth import require_admin, require_senior_or_super, require_super_admin, require_permission
     from approval_endpoints import TREASURER_HOLDERS, _audit, _notify, _apply_treasury_effect
 
 ec_router = APIRouter()
@@ -352,7 +352,7 @@ def _compute_source_summary(
 def get_extra_curriculars(
     year: int = Query(default=2026, ge=0, le=2100),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("extra_curriculars")),
 ):
     shop_src = db.query(models.ExtraCurricularSource).filter(
         models.ExtraCurricularSource.code == "other_shop_maint_a",
@@ -388,7 +388,7 @@ def update_extra_curricular_source(
     source_id: int,
     payload: schemas.ExtraCurricularSourceUpdate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("extra_curriculars")),
 ):
     src = db.query(models.ExtraCurricularSource).filter(models.ExtraCurricularSource.id == source_id).first()
     if not src:
@@ -447,7 +447,7 @@ def update_extra_curricular_source(
 def collect_extra_curricular(
     payload: schemas.ExtraCurricularPaymentCreate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_senior_or_super),
+    user: models.User = Depends(require_permission("extra_curriculars")),
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
