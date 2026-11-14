@@ -215,11 +215,14 @@ app = FastAPI(
 )
 
 # CORS setup for frontend
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+_cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "https://www.anumvista.com,https://anumvista.com,http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins if o.strip()],
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:.*|http://127\.0\.0\.1:.*",
+    allow_origin_regex=r"https://(www\.)?anumvista\.com|https://.*\.vercel\.app|http://localhost:.*|http://127\.0\.0\.1:.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
