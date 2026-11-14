@@ -12,12 +12,12 @@ try:
     from backend import models, schemas
     from backend.database import get_db
     from backend.auth import (verify_password, create_access_token, get_current_user,
-                               require_admin, require_super_admin, hash_password)
+                               require_admin, require_senior_or_super, require_super_admin, hash_password)
 except ImportError:
     import models, schemas
     from database import get_db
     from auth import (verify_password, create_access_token, get_current_user,
-                      require_admin, require_super_admin, hash_password)
+                      require_admin, require_senior_or_super, require_super_admin, hash_password)
 
 router = APIRouter()
 TREASURER_HOLDERS = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
@@ -31,20 +31,51 @@ def _seed_users(db: Session):
         {"username": "superadmin", "email": "superadmin@anumvista.com", "password": "super123", "role": models.UserRole.super_admin},
         {"username": "anumvista", "email": None, "password": "anumvista123", "role": models.UserRole.super_admin},
     ]
-    # Add unique super_admin accounts for treasurers
+    # Add unique accounts for treasurers
     for t in TREASURER_HOLDERS:
+        uname = t.lower() if t in ("Naveed", "Dilshad") else t
+        urole = models.UserRole.senior_admin if t == "Dilshad" else models.UserRole.super_admin
+        upwd = "dilshad@2026" if t == "Dilshad" else f"{t.lower()}123"
         accounts.append({
-            "username": t,
+            "username": uname,
             "email": f"{t.lower()}@anumvista.com",
-            "password": f"{t.lower()}123",
-            "role": models.UserRole.super_admin
+            "password": upwd,
+            "role": urole,
         })
 
     for acct in accounts:
-        if not db.query(models.User).filter(models.User.username == acct["username"]).first():
+        if not db.query(models.User).filter(func.lower(models.User.username) == acct["username"].lower()).first():
             db.add(models.User(username=acct["username"], email=acct["email"],
                                hashed_password=hash_password(acct["password"]), role=acct["role"]))
-            
+    db.flush()
+
+    # Sync Naveed (super_admin, username 'naveed', same password as superadmin)
+    sa_user = db.query(models.User).filter(func.lower(models.User.username) == "superadmin").first()
+    naveed_user = db.query(models.User).filter(func.lower(models.User.username) == "naveed").first()
+    if naveed_user:
+        naveed_user.username = "naveed"
+        naveed_user.role = models.UserRole.super_admin
+        if sa_user and sa_user.hashed_password:
+            naveed_user.hashed_password = sa_user.hashed_password
+        db.add(naveed_user)
+
+    # Sync Dilshad (senior_admin, username 'dilshad')
+    dilshad_user = db.query(models.User).filter(func.lower(models.User.username) == "dilshad").first()
+    if dilshad_user:
+        dilshad_user.username = "dilshad"
+        if dilshad_user.role != models.UserRole.senior_admin:
+            dilshad_user.role = models.UserRole.senior_admin
+            dilshad_user.hashed_password = hash_password("dilshad@2026")
+        db.add(dilshad_user)
+
+    # Migrate any "General" / null credited_to OUTFLOW expenses to Dilshad
+    db.query(models.Transaction).filter(
+        models.Transaction.type == models.TransactionType.OUTFLOW,
+        (models.Transaction.credited_to.is_(None))
+        | (models.Transaction.credited_to == "")
+        | (models.Transaction.credited_to == "General"),
+    ).update({"credited_to": "Dilshad"}, synchronize_session=False)
+
     # Seed Advertisements
     for ad_name in ["Ad A", "Ad B", "Ad C"]:
         if not db.query(models.Advertisement).filter(models.Advertisement.advertiser_name == ad_name).first():
@@ -142,7 +173,9 @@ def _get_unpaid_months(occupant):
 @router.post("/api/auth/login", response_model=schemas.TokenResponse)
 @router.post("/auth/login", response_model=schemas.TokenResponse, include_in_schema=False)
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == payload.username).first()
+    user = db.query(models.User).filter(
+        func.lower(models.User.username) == payload.username.strip().lower()
+    ).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(data={"sub": user.username, "role": user.role.value})
@@ -311,16 +344,35 @@ def _reverse_treasury_effect(db: Session, txn: "models.Transaction") -> None:
             _bump(txn.credited_to, -txn.amount)
 
 
+def _can_approve_txn(user: models.User, txn: models.Transaction) -> Optional[str]:
+    """Return error message if user cannot approve/reject this transaction, else None."""
+    uname = (user.username or "").lower()
+    if uname in ("superadmin", "anumvista"):
+        return None
+    if txn.type == models.TransactionType.OUTFLOW:
+        if user.role != models.UserRole.senior_admin and uname != "dilshad":
+            return "Outflow expense approvals are handled only by Dilshad."
+        return None
+    if txn.type == models.TransactionType.INFLOW and txn.category == models.TransactionCategory.maintenance:
+        if user.role != models.UserRole.super_admin and uname != "naveed":
+            return "Maintenance approvals are handled only by Naveed."
+        return None
+    if txn.credited_to and uname != txn.credited_to.lower():
+        return f"Only {txn.credited_to} or master super admin can approve/reject this transaction."
+    return None
+
+
 @router.post("/api/transactions/{txn_id}/approve", response_model=schemas.TransactionOut)
 def approve_transaction(txn_id: int, db: Session = Depends(get_db),
-                        user: models.User = Depends(require_super_admin)):
+                        user: models.User = Depends(require_senior_or_super)):
     txn = db.query(models.Transaction).filter(models.Transaction.id == txn_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status != models.TransactionStatus.pending:
         raise HTTPException(status_code=400, detail=f"Cannot approve: status is {txn.status.value}")
-    if txn.credited_to and user.username != txn.credited_to and user.username not in ("superadmin", "anumvista"):
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can approve this transaction.")
+    err = _can_approve_txn(user, txn)
+    if err:
+        raise HTTPException(status_code=403, detail=err)
 
     txn.status = models.TransactionStatus.approved
     txn.approved_by_user_id = user.id
@@ -365,14 +417,15 @@ def approve_transaction(txn_id: int, db: Session = Depends(get_db),
 
 @router.post("/api/transactions/{txn_id}/reject", response_model=schemas.TransactionOut)
 def reject_transaction(txn_id: int, body: schemas.ApprovalAction,
-                       db: Session = Depends(get_db), user: models.User = Depends(require_super_admin)):
+                       db: Session = Depends(get_db), user: models.User = Depends(require_senior_or_super)):
     txn = db.query(models.Transaction).filter(models.Transaction.id == txn_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status != models.TransactionStatus.pending:
         raise HTTPException(status_code=400, detail=f"Cannot reject: status is {txn.status.value}")
-    if txn.credited_to and user.username != txn.credited_to and user.username not in ("superadmin", "anumvista"):
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can reject this transaction.")
+    err = _can_approve_txn(user, txn)
+    if err:
+        raise HTTPException(status_code=403, detail=err)
     txn.status = models.TransactionStatus.rejected
     txn.rejection_reason = body.reason or ""
     txn.approved_by_user_id = user.id
@@ -394,14 +447,16 @@ def reject_transaction(txn_id: int, body: schemas.ApprovalAction,
 
 @router.post("/api/transactions/{txn_id}/cancel", response_model=schemas.TransactionOut)
 def cancel_transaction(txn_id: int, body: schemas.ApprovalAction,
-                       db: Session = Depends(get_db), user: models.User = Depends(require_super_admin)):
+                       db: Session = Depends(get_db), user: models.User = Depends(require_senior_or_super)):
     txn = db.query(models.Transaction).filter(models.Transaction.id == txn_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     if txn.status == models.TransactionStatus.cancelled:
         raise HTTPException(status_code=400, detail="Already cancelled")
-    if txn.credited_to and user.username != txn.credited_to and txn.status == models.TransactionStatus.pending and user.username not in ("superadmin", "anumvista"):
-        raise HTTPException(status_code=403, detail=f"Only {txn.credited_to} or master super admin can cancel this pending transaction.")
+    if txn.status == models.TransactionStatus.pending:
+        err = _can_approve_txn(user, txn)
+        if err:
+            raise HTTPException(status_code=403, detail=err)
 
     was_approved = txn.status == models.TransactionStatus.approved
 
@@ -564,7 +619,7 @@ def restore_transaction(
 
 # ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
 @router.get("/api/audit-logs", response_model=List[schemas.AuditLogOut])
-def get_audit_logs(db: Session = Depends(get_db), user: models.User = Depends(require_super_admin),
+def get_audit_logs(db: Session = Depends(get_db), user: models.User = Depends(require_senior_or_super),
                    limit: int = Query(default=100, ge=1, le=500),
                    offset: int = Query(default=0, ge=0),
                    action: Optional[str] = Query(default=None),
@@ -932,6 +987,11 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
 @router.put("/api/transactions/{txn_id}", response_model=schemas.TransactionOut)
 def update_transaction(txn_id: int, payload: schemas.TransactionCreate,
                        db: Session = Depends(get_db), user: models.User = Depends(require_super_admin)):
+    if payload.type == models.TransactionType.TRANSFER and payload.credited_to == "Danish":
+        raise HTTPException(
+            status_code=400,
+            detail="Money cannot be transferred/stored to Danish. You can only receive money from Danish.",
+        )
     txn = db.query(models.Transaction).filter(models.Transaction.id == txn_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")

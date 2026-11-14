@@ -63,7 +63,7 @@ export default function AuditLogPage() {
   const [actorFilter, setActorFilter] = useState("");
 
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin") {
+    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
       router.push("/tenants");
     }
   }, [user, authLoading, router]);
@@ -82,7 +82,7 @@ export default function AuditLogPage() {
       .finally(() => setLoading(false));
   }, [actionFilter, actorFilter]);
 
-  if (authLoading || user?.role !== "super_admin") return null;
+  if (authLoading || (user?.role !== "super_admin" && user?.role !== "senior_admin")) return null;
 
   return (
     <div className="space-y-6">

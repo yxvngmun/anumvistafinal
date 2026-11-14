@@ -39,6 +39,10 @@ function TransactionsContent() {
   const { user } = useAuth();
   const router = useRouter();
   const isSuperAdmin = user?.role === "super_admin";
+  const isSeniorAdmin = user?.role === "senior_admin";
+  const isManagement = isSuperAdmin || isSeniorAdmin;
+  const isDilshad = isSeniorAdmin || user?.username?.toLowerCase() === "dilshad";
+  const isMaster = ["superadmin", "anumvista"].includes((user?.username || "").toLowerCase());
   const isAdmin = user?.role === "admin";
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -61,7 +65,7 @@ function TransactionsContent() {
 
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const currentTab = isAdmin ? "outflow" : (requestedTab || "inflow");
+  const currentTab = requestedTab || "inflow";
 
   // Form states
   const [date, setDate] = useState("");
@@ -110,9 +114,19 @@ function TransactionsContent() {
   }, [transactions]);
 
   const pendingApprovals = useMemo(() => {
-    if (!isSuperAdmin) return [];
-    return transactions.filter((tx) => tx.status === "pending");
-  }, [transactions, isSuperAdmin]);
+    if (!isManagement) return [];
+    return transactions.filter((tx) => {
+      if (tx.status !== "pending") return false;
+      if (isMaster) return true;
+      if (isDilshad) {
+        return tx.type === "OUTFLOW" || tx.category === "ad_revenue" || tx.credited_to === "Dilshad";
+      }
+      if (isSuperAdmin) {
+        return tx.type !== "OUTFLOW" && tx.credited_to !== "Dilshad";
+      }
+      return false;
+    });
+  }, [transactions, isManagement, isMaster, isDilshad, isSuperAdmin]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -235,7 +249,7 @@ function TransactionsContent() {
         });
       }
       await loadData();
-      setSuccessMsg(isSuperAdmin ? "Transaction logged" : "Submitted for approval");
+      setSuccessMsg(isManagement ? "Transaction logged" : "Submitted for approval");
       resetForm();
       setCreateOpen(false);
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -260,16 +274,32 @@ function TransactionsContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          {currentTab === "outflow" && (
+          {currentTab === "outflow" && (isDilshad || isMaster) && (
             <button
               onClick={() => {
                 resetForm();
+                setType("OUTFLOW");
+                setCreditedTo("Dilshad");
                 setDate(new Date().toISOString().split("T")[0]);
                 setCreateOpen(true);
               }}
               className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-3.5 py-1.5 text-xs font-bold transition-colors press-feedback shadow-sm"
             >
               + New Expense
+            </button>
+          )}
+          {currentTab === "outflow" && isSuperAdmin && !isDilshad && !isMaster && (
+            <button
+              onClick={() => {
+                resetForm();
+                setType("TRANSFER");
+                setCategory("other");
+                setDate(new Date().toISOString().split("T")[0]);
+                setCreateOpen(true);
+              }}
+              className="rounded-lg bg-black text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 px-3.5 py-1.5 text-xs font-bold transition-colors press-feedback shadow-sm"
+            >
+              + Internal Transfer
             </button>
           )}
         </div>
@@ -288,7 +318,7 @@ function TransactionsContent() {
       )}
 
       {/* Pending Approvals Notice Banner */}
-      {isSuperAdmin && pendingApprovals.length > 0 && (
+      {isManagement && pendingApprovals.length > 0 && (
         <div id="pending-approvals" className="rounded-xl border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -301,7 +331,7 @@ function TransactionsContent() {
             {pendingApprovals.map((tx) => {
               const label = tx.occupant_id
                 ? occupantMap.get(tx.occupant_id) || "Occupant"
-                : tx.extra_source_name || (tx.type === "INFLOW" ? "General Inflow" : "General Expense");
+                : tx.extra_source_name || tx.expense_description || (tx.type === "INFLOW" ? "Inflow" : `${tx.credited_to || "Dilshad"} Expense`);
               const isInflow = tx.type === "INFLOW";
               return (
                 <div key={tx.id} className="rounded-lg bg-white dark:bg-[#0d131f] border border-slate-200 dark:border-white/10 p-3.5 space-y-2 shadow-sm">
@@ -551,10 +581,15 @@ function TransactionsContent() {
                   <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Type</label>
                   <select
                     value={type}
-                    onChange={(e) => setType(e.target.value as TransactionType)}
+                    onChange={(e) => {
+                      const next = e.target.value as TransactionType;
+                      setType(next);
+                      if (next === "OUTFLOW") setCreditedTo("Dilshad");
+                      else setCreditedTo("");
+                    }}
                     className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
                   >
-                    <option value="OUTFLOW">Expense (Outflow)</option>
+                    {(isDilshad || isMaster) && <option value="OUTFLOW">Expense (Outflow)</option>}
                     <option value="TRANSFER">Internal Transfer</option>
                   </select>
                 </div>
@@ -587,7 +622,7 @@ function TransactionsContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">To Treasurer</label>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">To Treasurer (No Danish)</label>
                     <select
                       required
                       value={creditedTo}
@@ -595,7 +630,7 @@ function TransactionsContent() {
                       className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
                     >
                       <option value="">Select...</option>
-                      {TREASURERS.map((t) => <option key={t} value={t}>{t}</option>)}
+                      {TREASURERS.filter((t) => t !== "Danish").map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                 </div>
@@ -603,15 +638,12 @@ function TransactionsContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Disbursed By</label>
-                    <select
-                      required
-                      value={creditedTo}
-                      onChange={(e) => setCreditedTo(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
-                    >
-                      <option value="">Select Treasurer...</option>
-                      {OPERATIONAL_TREASURERS.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <input
+                      type="text"
+                      readOnly
+                      value="Dilshad (Expense Recorder)"
+                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 outline-none cursor-not-allowed"
+                    />
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-zinc-400 mb-1">Payment Mode</label>

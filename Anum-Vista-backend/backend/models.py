@@ -10,6 +10,7 @@ from decimal import Decimal
 
 class UserRole(str, enum.Enum):
     admin = "admin"
+    senior_admin = "senior_admin"
     super_admin = "super_admin"
 
 class UnitType(str, enum.Enum):

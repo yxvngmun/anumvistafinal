@@ -59,7 +59,7 @@ export default function MonthlyAnalyticsPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin") {
+    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
       router.push("/tenants");
     }
   }, [authLoading, user, router]);
@@ -72,7 +72,7 @@ export default function MonthlyAnalyticsPage() {
   } = useQuery({
     queryKey: ["monthly-report", year, month],
     queryFn: () => api.getMonthlyReport(year, month),
-    enabled: user?.role === "super_admin",
+    enabled: user?.role === "super_admin" || user?.role === "senior_admin",
   });
 
   const monthLabel = useMemo(
@@ -113,7 +113,7 @@ export default function MonthlyAnalyticsPage() {
       ]
     : [];
 
-  if (authLoading || user?.role !== "super_admin") return null;
+  if (authLoading || (user?.role !== "super_admin" && user?.role !== "senior_admin")) return null;
 
   return (
     <div className="space-y-6">

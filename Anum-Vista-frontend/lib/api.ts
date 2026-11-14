@@ -111,13 +111,13 @@ export interface AuthUser {
   id: number;
   username: string;
   email: string | null;
-  role: "admin" | "super_admin";
+  role: "admin" | "senior_admin" | "super_admin";
 }
 
 export interface LoginResponse {
   access_token: string;
   token_type: string;
-  role: "admin" | "super_admin";
+  role: "admin" | "senior_admin" | "super_admin";
 }
 
 export interface AuditLogFilters {

@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("av_role", data.role);
     setToken(data.access_token);
     await fetchMe(data.access_token);
-    router.push(data.role === "super_admin" ? "/dashboard" : "/tenants");
+    router.push(data.role === "super_admin" || data.role === "senior_admin" ? "/dashboard" : "/tenants");
   };
 
   return (

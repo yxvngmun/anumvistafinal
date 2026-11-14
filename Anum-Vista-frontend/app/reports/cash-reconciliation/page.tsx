@@ -19,7 +19,7 @@ export default function CashReconciliationPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const isSuperAdmin = user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
 
   const { data } = useQuery<CashReconciliationReport>({
     queryKey: ["reports", "cash-reconciliation", year, month],

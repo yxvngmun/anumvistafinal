@@ -14,7 +14,7 @@ type SortKey = "unit_no" | "name" | "months_overdue" | "total_due";
 export default function PendingDuesPage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const isSuperAdmin = user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
 
   useEffect(() => {
     if (isAuthenticated && user && !isSuperAdmin) {

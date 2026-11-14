@@ -44,7 +44,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin") {
+    if (!authLoading && user?.role !== "super_admin" && user?.role !== "senior_admin") {
       router.push("/tenants");
     }
   }, [authLoading, user, router]);

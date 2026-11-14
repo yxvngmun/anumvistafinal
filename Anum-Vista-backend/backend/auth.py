@@ -81,8 +81,21 @@ def get_current_user(
 
 
 def require_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
-    if current_user.role not in (models.UserRole.admin, models.UserRole.super_admin):
+    if current_user.role not in (
+        models.UserRole.admin,
+        models.UserRole.senior_admin,
+        models.UserRole.super_admin,
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return current_user
+
+
+def require_senior_or_super(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if current_user.role not in (models.UserRole.senior_admin, models.UserRole.super_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Senior Admin or Super Admin access required",
+        )
     return current_user
 
 

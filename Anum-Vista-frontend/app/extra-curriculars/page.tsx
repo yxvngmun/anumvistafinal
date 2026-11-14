@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -42,9 +43,20 @@ function defaultPeriodForCycle(cycle: string, year: number): string {
 }
 
 export default function ExtraCurricularsPage() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const isSuperAdmin = user?.role === "super_admin";
+  const isSeniorAdmin = user?.role === "senior_admin";
+  const isMaster = ["superadmin", "anumvista"].includes((user?.username || "").toLowerCase());
+  const canCollectAdvert = isSeniorAdmin || isMaster;
+  const canCollectHallAndOther = isSuperAdmin || isMaster;
   const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!authLoading && user && user.role === "admin") {
+      router.push("/tenants");
+    }
+  }, [authLoading, user, router]);
 
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [sourceFilter, setSourceFilter] = useState<string>("ALL");
@@ -96,10 +108,17 @@ export default function ExtraCurricularsPage() {
     () => sources.filter((s) => s.source_type === "advert"),
     [sources],
   );
-  const hallAndOtherSources = useMemo(
-    () => sources.filter((s) => s.source_type !== "advert"),
-    [sources],
-  );
+  const coreRowSources = useMemo(() => {
+    const order = ["community_hall", "other_shop_maint_a", "advert_1", "advert_2", "advert_3", "advert_4"];
+    const byCode = new Map(sources.map((s) => [s.code, s]));
+    return order.map((c) => byCode.get(c)).filter((s): s is ExtraCurricularSourceSummary => Boolean(s));
+  }, [sources]);
+  const collectableSources = useMemo(() => {
+    return sources.filter((s) => {
+      if (s.source_type === "advert") return canCollectAdvert;
+      return canCollectHallAndOther;
+    });
+  }, [sources, canCollectAdvert, canCollectHallAndOther]);
 
   const openCollectFor = (src?: ExtraCurricularSourceSummary) => {
     const code = src ? src.code : "other";
@@ -108,13 +127,12 @@ export default function ExtraCurricularsPage() {
     setCustomOtherName("");
     setBillingCycle(cycle);
     setPeriodLabel(defaultPeriodForCycle(cycle, selectedYear || new Date().getFullYear()));
-    setCollectAmount("");
+    setCollectAmount(code === "community_hall" ? "8000" : "");
     setCollectDate(new Date().toISOString().split("T")[0]);
     const isAdv = src?.source_type === "advert";
-    const isHall = src?.source_type === "community_hall";
-    setCreditedTo(isAdv ? "Dilshad" : isHall ? "Naveed" : (treasurers[0] || DEFAULT_TREASURERS[0]));
+    setCreditedTo(isAdv ? "Dilshad" : "Naveed");
     setPaymentMode("cash");
-    setNotes("");
+    setNotes(code === "community_hall" ? "Community Hall (With AC)" : "");
     setCollectOpen(true);
   };
 
@@ -125,14 +143,18 @@ export default function ExtraCurricularsPage() {
       const cycle = (match.billing_cycle as "quarterly" | "half_yearly" | "yearly" | "one_time") || "yearly";
       setBillingCycle(cycle);
       setPeriodLabel(defaultPeriodForCycle(cycle, selectedYear || new Date().getFullYear()));
-      if (match.source_type === "advert") {
-        setCreditedTo("Dilshad");
-      } else if (match.source_type === "community_hall") {
-        setCreditedTo("Naveed");
+      setCreditedTo(match.source_type === "advert" ? "Dilshad" : "Naveed");
+      if (code === "community_hall") {
+        setCollectAmount("8000");
+        setNotes("Community Hall (With AC)");
+      } else {
+        setNotes("");
       }
     } else if (code === "other") {
       setBillingCycle("one_time");
       setPeriodLabel(defaultPeriodForCycle("one_time", selectedYear || new Date().getFullYear()));
+      setCreditedTo("Naveed");
+      setNotes("");
     }
   };
 
@@ -280,18 +302,14 @@ export default function ExtraCurricularsPage() {
             <option value={0}>All Years</option>
           </select>
 
-          <button
-            onClick={() => openCollectFor(sources[0])}
-            className="rounded-lg bg-black hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black px-4 py-2 text-sm font-bold shadow-sm transition-colors press-feedback"
-          >
-            + Collect Payment
-          </button>
-          <button
-            onClick={() => openCollectFor(undefined)}
-            className="rounded-lg border border-slate-300 dark:border-white/20 bg-white dark:bg-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/10 text-slate-800 dark:text-white px-4 py-2 text-sm font-bold transition-colors press-feedback"
-          >
-            + Others (Custom Method)
-          </button>
+          {canCollectHallAndOther && (
+            <button
+              onClick={() => openCollectFor(undefined)}
+              className="rounded-lg bg-black hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black px-4 py-2 text-sm font-bold shadow-sm transition-colors press-feedback"
+            >
+              + Others (Custom Method)
+            </button>
+          )}
         </div>
       </div>
 
@@ -309,7 +327,7 @@ export default function ExtraCurricularsPage() {
       )}
 
       {/* Summary Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-4 shadow-sm">
           <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
             Total Collected ({selectedYear === 0 ? "All Time" : selectedYear})
@@ -326,150 +344,108 @@ export default function ExtraCurricularsPage() {
             {fmt(advertSources.reduce((s, a) => s + Number(a.received_per_month || 0), 0))}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-4 shadow-sm">
-          <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
-            Active Revenue Sources
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-            {sources.length} Categories
-          </div>
-        </div>
       </div>
 
-      {/* Advert 1 - 4 Cards with Annual Fixed & Divide-by-12 Tracking */}
-      <div className="space-y-3">
-        <h3 className="text-base font-bold text-slate-900 dark:text-white">
-          Advertisements (Fixed Annual Target & Monthly ÷ 12 Breakdown)
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-44 rounded-xl bg-slate-200 dark:bg-white/[0.04] animate-pulse" />
-            ))
-          ) : (
-            advertSources.map((src) => {
-              const annualFixed = Number(src.annual_fixed_amount || 0);
-              const received = Number(src.total_received || 0);
-              const pct = annualFixed > 0 ? Math.min(100, Math.round((received / annualFixed) * 100)) : 0;
-              return (
-                <div
-                  key={src.id}
-                  className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-5 shadow-sm flex flex-col justify-between gap-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-base font-bold text-slate-900 dark:text-white">{src.name}</h4>
-                        <span className="rounded-full px-2.5 py-0.5 text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20">
+      {/* Row-Based Extra Curricular Modules */}
+      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              Extra Curricular Modules
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-zinc-400">
+              Naveed handles Community Hall, Shop Rental &amp; Others · Dilshad handles Advert 1–4
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-zinc-400 font-bold uppercase text-xs bg-slate-50 dark:bg-white/[0.02]">
+                <th className="py-3 px-4">Module</th>
+                <th className="py-3 px-4">Schedule / Rate</th>
+                <th className="py-3 px-4 text-right">Annual Target</th>
+                <th className="py-3 px-4 text-right">Received ({selectedYear || "All"})</th>
+                <th className="py-3 px-4 text-right">Received ÷ 12</th>
+                <th className="py-3 px-4 text-right">Remaining ÷ 12</th>
+                <th className="py-3 px-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04]">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">Loading modules...</td>
+                </tr>
+              ) : (
+                coreRowSources.map((src) => {
+                  const isAdv = src.source_type === "advert";
+                  const canCollectRow = isAdv ? canCollectAdvert : canCollectHallAndOther;
+                  const canEditRow = isAdv && (isSeniorAdmin || isMaster);
+                  return (
+                    <tr key={src.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.02]">
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900 dark:text-white">{src.name}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                          Receiver: {isAdv ? "Dilshad" : "Naveed"}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-600 dark:text-zinc-300">
+                        <span className="rounded-full px-2.5 py-0.5 font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/20">
                           {CYCLE_LABELS[src.billing_cycle] || src.billing_cycle}
                         </span>
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                        Fixed Annual: <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{fmt(src.annual_fixed_amount)}</span>{" "}
-                        ({fmt(src.monthly_target)} / month)
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {isSuperAdmin && (
-                        <button
-                          onClick={() => {
-                            setEditingSource(src);
-                            setEditName(src.name);
-                            setEditCycle(src.billing_cycle as "quarterly" | "half_yearly" | "yearly" | "one_time");
-                            setEditAnnualAmount(String(src.annual_fixed_amount));
-                          }}
-                          className="rounded-lg border border-slate-200 dark:border-white/15 px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10"
-                        >
-                          Edit Target
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openCollectFor(src)}
-                        className="rounded-lg bg-black dark:bg-white text-white dark:text-black px-3 py-1 text-xs font-bold hover:opacity-85 press-feedback"
-                      >
-                        Collect
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Progress bar */}
-                  {annualFixed > 0 && (
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-white/10 text-xs">
-                    <div>
-                      <div className="text-slate-500 dark:text-zinc-400">Received ({selectedYear || "All"})</div>
-                      <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm mt-0.5">
+                        {src.code === "community_hall" && (
+                          <div className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1">
+                            With AC: ₨ 8,000 · Without AC: ₨ 4,000
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                        {isAdv ? fmt(src.annual_fixed_amount) : "—"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
                         {fmt(src.total_received)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500 dark:text-zinc-400">Received ÷ 12</div>
-                      <div className="font-mono font-bold text-slate-900 dark:text-white text-sm mt-0.5">
-                        {fmt(src.received_per_month)}/mo
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500 dark:text-zinc-400">Annual Remaining</div>
-                      <div className={`font-mono font-bold text-sm mt-0.5 ${Number(src.remaining_annual) > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-500"}`}>
-                        {fmt(src.remaining_annual)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-500 dark:text-zinc-400">Remaining ÷ 12</div>
-                      <div className={`font-mono font-bold text-sm mt-0.5 ${Number(src.remaining_per_month) > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                        {fmt(src.remaining_per_month)}/mo
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Community Hall & Others Cards */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            Community Hall & Other Inflows (Scraps, Shop Maintenance, Custom)
-          </h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {hallAndOtherSources.map((src) => (
-            <div
-              key={src.id}
-              className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] p-4 shadow-sm flex flex-col justify-between gap-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
-                    {src.source_type === "community_hall" ? "Community Hall" : "Other Method"}
-                  </span>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{src.name}</h4>
-                </div>
-                <button
-                  onClick={() => openCollectFor(src)}
-                  className="rounded-lg bg-slate-100 hover:bg-black hover:text-white dark:bg-white/10 dark:hover:bg-white dark:hover:text-black text-slate-800 dark:text-white px-2.5 py-1 text-xs font-bold transition-colors"
-                >
-                  Collect
-                </button>
-              </div>
-              <div className="pt-2 border-t border-slate-100 dark:border-white/10 flex items-baseline justify-between">
-                <span className="text-xs text-slate-500 dark:text-zinc-400">Received:</span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-base">
-                  {fmt(src.total_received)}
-                </span>
-              </div>
-            </div>
-          ))}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-xs text-slate-700 dark:text-zinc-300">
+                        {isAdv ? `${fmt(src.received_per_month)}/mo` : "—"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        {isAdv ? `${fmt(src.remaining_per_month)}/mo` : "—"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          {canEditRow && (
+                            <button
+                              onClick={() => {
+                                setEditingSource(src);
+                                setEditName(src.name);
+                                setEditCycle(src.billing_cycle as "quarterly" | "half_yearly" | "yearly" | "one_time");
+                                setEditAnnualAmount(String(src.annual_fixed_amount));
+                              }}
+                              className="rounded-lg border border-slate-200 dark:border-white/15 px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-white/10"
+                            >
+                              Edit Target
+                            </button>
+                          )}
+                          {canCollectRow ? (
+                            <button
+                              onClick={() => openCollectFor(src)}
+                              className="rounded-lg bg-black dark:bg-white text-white dark:text-black px-3 py-1 text-xs font-bold hover:opacity-85 press-feedback"
+                            >
+                              Collect
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-400 dark:text-zinc-500 px-2">
+                              View Only
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -635,14 +611,52 @@ export default function ExtraCurricularsPage() {
                   onChange={(e) => handleSourceSelectChange(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-sm text-slate-900 dark:text-white"
                 >
-                  {sources.map((s) => (
+                  {collectableSources.map((s) => (
                     <option key={s.id} value={s.code}>
                       {s.name}
                     </option>
                   ))}
-                  <option value="other">+ Others (Enter New Inflow Method)</option>
+                  {canCollectHallAndOther && <option value="other">+ Others (Enter New Inflow Method)</option>}
                 </select>
               </div>
+
+              {selectedSourceCode === "community_hall" && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400 mb-1.5">
+                    Community Hall Option
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollectAmount("8000");
+                        setNotes("Community Hall (With AC)");
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
+                        collectAmount === "8000"
+                          ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                          : "border-slate-300 dark:border-white/15 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      With AC — ₨ 8,000
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollectAmount("4000");
+                        setNotes("Community Hall (Without AC)");
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
+                        collectAmount === "4000"
+                          ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                          : "border-slate-300 dark:border-white/15 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      Without AC — ₨ 4,000
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {selectedSourceCode === "other" && (
                 <div className="sm:col-span-2">
@@ -732,23 +746,13 @@ export default function ExtraCurricularsPage() {
                     readOnly
                     className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 cursor-not-allowed"
                   />
-                ) : sources.find((s) => s.code === selectedSourceCode)?.source_type === "community_hall" ? (
+                ) : (
                   <input
                     type="text"
-                    value="Naveed (Community Hall Receiver Only)"
+                    value="Naveed (Extra Curricular Receiver)"
                     readOnly
                     className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 cursor-not-allowed"
                   />
-                ) : (
-                  <select
-                    value={creditedTo}
-                    onChange={(e) => setCreditedTo(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0d131f] px-3 py-2 text-sm text-slate-900 dark:text-white"
-                  >
-                    {treasurers.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
                 )}
               </div>
 

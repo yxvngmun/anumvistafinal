@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 try:
     from backend import models, schemas
     from backend.database import get_db
-    from backend.auth import require_admin, require_super_admin
+    from backend.auth import require_admin, require_senior_or_super, require_super_admin
     from backend.approval_endpoints import TREASURER_HOLDERS, _audit, _notify, _apply_treasury_effect
 except ImportError:
     import models, schemas
     from database import get_db
-    from auth import require_admin, require_super_admin
+    from auth import require_admin, require_senior_or_super, require_super_admin
     from approval_endpoints import TREASURER_HOLDERS, _audit, _notify, _apply_treasury_effect
 
 ec_router = APIRouter()
@@ -64,7 +64,7 @@ DEFAULT_SOURCES = [
     },
     {
         "code": "other_shop_maint_a",
-        "name": "Shop Maintenance (A)",
+        "name": "Shop Rental",
         "source_type": "other",
         "billing_cycle": "one_time",
         "annual_fixed_amount": Decimal("0.00"),
@@ -383,8 +383,15 @@ def _compute_source_summary(
 def get_extra_curriculars(
     year: int = Query(default=2026, ge=0, le=2100),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
+    shop_src = db.query(models.ExtraCurricularSource).filter(
+        models.ExtraCurricularSource.code == "other_shop_maint_a",
+        models.ExtraCurricularSource.name == "Shop Maintenance (A)",
+    ).first()
+    if shop_src:
+        shop_src.name = "Shop Rental"
+        db.commit()
     sources = db.query(models.ExtraCurricularSource).order_by(models.ExtraCurricularSource.id.asc()).all()
     q = db.query(models.Transaction).filter(models.Transaction.extra_source_id.isnot(None))
     if year > 0:
@@ -412,11 +419,17 @@ def update_extra_curricular_source(
     source_id: int,
     payload: schemas.ExtraCurricularSourceUpdate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     src = db.query(models.ExtraCurricularSource).filter(models.ExtraCurricularSource.id == source_id).first()
     if not src:
         raise HTTPException(status_code=404, detail="Extra curricular source not found")
+    uname = (user.username or "").lower()
+    if uname not in ("superadmin", "anumvista"):
+        if src.source_type == "advert" and user.role != models.UserRole.senior_admin and uname != "dilshad":
+            raise HTTPException(status_code=403, detail="Only Dilshad can edit Advert targets.")
+        if src.source_type != "advert" and user.role != models.UserRole.super_admin and uname != "naveed":
+            raise HTTPException(status_code=403, detail="Only Naveed can edit non-advert extra curricular sources.")
 
     if payload.billing_cycle is not None:
         if payload.billing_cycle not in ("quarterly", "half_yearly", "yearly", "one_time"):
@@ -465,7 +478,7 @@ def update_extra_curricular_source(
 def collect_extra_curricular(
     payload: schemas.ExtraCurricularPaymentCreate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
@@ -499,12 +512,19 @@ def collect_extra_curricular(
             db.add(src)
             db.flush()
 
-    if src.source_type == "advert" and payload.credited_to != "Dilshad":
-        raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
-    if src.source_type == "community_hall" and payload.credited_to != "Naveed":
-        raise HTTPException(status_code=400, detail="Community Hall receiving is handled only by Naveed.")
+    uname = (user.username or "").lower()
+    if src.source_type == "advert":
+        if uname not in ("dilshad", "superadmin", "anumvista") and user.role != models.UserRole.senior_admin:
+            raise HTTPException(status_code=403, detail="Only Dilshad can collect Advert payments.")
+        if payload.credited_to != "Dilshad":
+            raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
+    else:
+        if uname not in ("naveed", "superadmin", "anumvista") and user.role != models.UserRole.super_admin:
+            raise HTTPException(status_code=403, detail="Only Naveed can collect Community Hall, Shop Rental, and Other payments.")
+        if payload.credited_to != "Naveed":
+            raise HTTPException(status_code=400, detail="Community Hall, Shop Rental, and Other extra curricular receiving is handled only by Naveed.")
 
-    is_super = user.role == models.UserRole.super_admin
+    is_super = user.role in (models.UserRole.super_admin, models.UserRole.senior_admin)
     category = (
         models.TransactionCategory.ad_revenue
         if src.source_type == "advert"

@@ -71,6 +71,8 @@ function Sidebar({
   if (!isAuthenticated || pathname === "/login") return null;
 
   const isSuperAdmin = user?.role === "super_admin";
+  const isSeniorAdmin = user?.role === "senior_admin";
+  const isManagement = isSuperAdmin || isSeniorAdmin;
 
   const adminItems = [
     {
@@ -88,15 +90,6 @@ function Sidebar({
       icon: (
         <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11M5 11v6a1 1 0 001 1h1m12-7v6a1 1 0 01-1 1h-1M5 11h14M7.5 14.5a1 1 0 100-2 1 1 0 000 2zm9 0a1 1 0 100-2 1 1 0 000 2z" />
-        </svg>
-      ),
-    },
-    {
-      href: "/extra-curriculars",
-      label: "Extra Curriculars",
-      icon: (
-        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
       ),
     },
@@ -134,6 +127,15 @@ function Sidebar({
       ),
     },
     {
+      href: "/extra-curriculars",
+      label: "Extra Curriculars",
+      icon: (
+        <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      ),
+    },
+    {
       href: "/audit-log",
       label: "Audit Trail",
       icon: (
@@ -144,7 +146,7 @@ function Sidebar({
     },
   ];
 
-  const navItems = isSuperAdmin ? [...superAdminItems, ...adminItems] : adminItems;
+  const navItems = isManagement ? [...superAdminItems, ...adminItems] : adminItems;
 
   return (
     <aside
@@ -239,27 +241,24 @@ function Sidebar({
               </button>
               {expensesOpen && !collapsed && (
                 <ul className="mt-1 ml-4 pl-3 border-l border-slate-200 dark:border-white/10 space-y-1">
-                  {isSuperAdmin && (
-                    <li>
-                      <Link
-                        href="/transactions?tab=inflow"
-                        className={`block rounded-md px-3 py-2 text-sm transition-colors ${
-                          searchParams.get("tab") === "inflow" ||
-                          (pathname === "/transactions" && !searchParams.get("tab"))
-                            ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
-                            : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
-                        }`}
-                      >
-                        Inflow (Collections)
-                      </Link>
-                    </li>
-                  )}
+                  <li>
+                    <Link
+                      href="/transactions?tab=inflow"
+                      className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+                        searchParams.get("tab") === "inflow" ||
+                        (pathname === "/transactions" && !searchParams.get("tab"))
+                          ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
+                          : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
+                      }`}
+                    >
+                      Inflow (Collections)
+                    </Link>
+                  </li>
                   <li>
                     <Link
                       href="/transactions?tab=outflow"
                       className={`block rounded-md px-3 py-2 text-sm transition-colors ${
-                        searchParams.get("tab") === "outflow" ||
-                        (!isSuperAdmin && pathname === "/transactions")
+                        searchParams.get("tab") === "outflow"
                           ? "text-black dark:text-white font-bold bg-slate-100 dark:bg-white/10"
                           : "text-slate-600 hover:text-black dark:text-zinc-400 dark:hover:text-white"
                       }`}
@@ -271,8 +270,8 @@ function Sidebar({
               )}
             </li>
 
-            {/* Reports Group (Super Admin only) */}
-            {isSuperAdmin && (
+            {/* Reports Group (Super Admin & Senior Admin) */}
+            {isManagement && (
               <li className="pt-2">
                 <button
                   type="button"
@@ -349,7 +348,7 @@ function Sidebar({
                   {user?.username}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-zinc-400 capitalize">
-                  {isSuperAdmin ? "Super Admin" : "Admin"}
+                  {isSuperAdmin ? "Super Admin" : isSeniorAdmin ? "Senior Admin" : "Admin"}
                 </p>
               </div>
             )}

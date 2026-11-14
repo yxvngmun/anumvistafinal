@@ -16,11 +16,13 @@ export default function TreasuryPage() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
+  const isManagement = user?.role === "super_admin" || user?.role === "senior_admin";
+
   useEffect(() => {
-    if (!authLoading && user?.role !== "super_admin") {
+    if (!authLoading && !isManagement) {
       router.push("/tenants");
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, isManagement, router]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["treasury-current"],
@@ -53,7 +55,7 @@ export default function TreasuryPage() {
     })
     .slice(0, 6);
 
-  if (authLoading || user?.role !== "super_admin") return null;
+  if (authLoading || !isManagement) return null;
 
   return (
     <div className="space-y-6">

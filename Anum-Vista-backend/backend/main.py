@@ -12,14 +12,14 @@ try:
     from backend.database import engine, get_db
     from backend.approval_endpoints import router as approval_router, _seed_users, _audit
     from backend.extra_curriculars import ec_router, seed_extra_curriculars
-    from backend.auth import require_admin, require_super_admin
+    from backend.auth import require_admin, require_senior_or_super, require_super_admin
 except ImportError:
     import models
     import schemas
     from database import engine, get_db
     from approval_endpoints import router as approval_router, _seed_users, _audit
     from extra_curriculars import ec_router, seed_extra_curriculars
-    from auth import require_admin, require_super_admin
+    from auth import require_admin, require_senior_or_super, require_super_admin
 
 # Create DB tables
 models.Base.metadata.create_all(bind=engine)
@@ -487,6 +487,19 @@ def create_transaction(
     user: models.User = Depends(require_admin),
 ):
     payload = transaction.model_dump()
+    uname = (user.username or "").lower()
+    if payload.get("type") == models.TransactionType.OUTFLOW:
+        if user.role != models.UserRole.senior_admin and uname not in ("dilshad", "superadmin", "anumvista"):
+            raise HTTPException(status_code=403, detail="Only Dilshad can add expenses.")
+        payload["credited_to"] = "Dilshad"
+    elif payload.get("type") == models.TransactionType.TRANSFER:
+        if user.role not in (models.UserRole.super_admin, models.UserRole.senior_admin):
+            raise HTTPException(status_code=403, detail="Only Super Admin or Senior Admin can record internal transfers.")
+        if payload.get("credited_to") == "Danish":
+            raise HTTPException(
+                status_code=400,
+                detail="Money cannot be transferred/stored to Danish. You can only receive money from Danish.",
+            )
     if payload.get("type") != models.TransactionType.TRANSFER:
         if payload.get("credited_to") in ("Ali", "Asif"):
             raise HTTPException(
@@ -503,7 +516,7 @@ def create_transaction(
             payload["credited_to"] = "Dilshad"
     if not payload.get("generated_by"):
         payload["generated_by"] = user.username
-    is_super = user.role == models.UserRole.super_admin
+    is_super = user.role in (models.UserRole.super_admin, models.UserRole.senior_admin)
     payload["status"] = (
         models.TransactionStatus.approved if is_super else models.TransactionStatus.pending
     )
@@ -567,7 +580,7 @@ def create_transaction(
 @app.get("/api/dashboard/metrics", response_model=schemas.DashboardMetrics)
 def get_dashboard_metrics(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     current_month = datetime.now().month
     current_year = datetime.now().year
@@ -641,7 +654,7 @@ def get_monthly_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     # Transaction-based totals
     base = db.query(models.Transaction).filter(
@@ -799,7 +812,7 @@ def get_monthly_report(
 @app.get("/api/treasury/current")
 def get_current_treasury_split(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     """
     Returns latest known split across the named holders from funds_in_hand_entries.
@@ -827,7 +840,7 @@ def get_current_treasury_split(
 def get_funds_position_history(
     db: Session = Depends(get_db),
     year: int | None = Query(default=None, ge=1900, le=2100),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     q = db.query(models.FundsPositionEntry).order_by(models.FundsPositionEntry.period.asc())
     if year is not None:
@@ -839,7 +852,7 @@ def get_funds_position_history(
 def get_funds_in_hand_history(
     db: Session = Depends(get_db),
     year: int | None = Query(default=None, ge=1900, le=2100),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     q = db.query(models.FundsInHandEntry).order_by(models.FundsInHandEntry.period.asc(), models.FundsInHandEntry.person.asc())
     if year is not None:
@@ -851,7 +864,7 @@ def get_funds_in_hand_history(
 def get_outstanding_maintenance_history(
     db: Session = Depends(get_db),
     as_of: date | None = None,
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     q = db.query(models.OutstandingMaintenanceSnapshot).order_by(models.OutstandingMaintenanceSnapshot.unit_no.asc())
     if as_of is not None:
@@ -865,7 +878,7 @@ def get_resident_ledger(
     occupant_id: int,
     year: int = Query(default=None, ge=1900, le=2100),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     occupant = db.query(models.Occupant).filter(models.Occupant.id == occupant_id).first()
     if not occupant:
@@ -952,7 +965,7 @@ def get_resident_ledger(
 @app.get("/api/reports/pending-dues", response_model=schemas.PendingDuesReport)
 def get_pending_dues_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     now = datetime.now()
     occupants = db.query(models.Occupant).all()
@@ -993,7 +1006,7 @@ def get_pending_dues_report(
 @app.get("/api/reports/advance-payments", response_model=schemas.AdvancePaymentReport)
 def get_advance_payments_report(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     now = datetime.now()
     current_month_date = datetime(now.year, now.month, 1)
@@ -1027,7 +1040,7 @@ def get_expense_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     base = db.query(models.Transaction).filter(
         models.Transaction.type == models.TransactionType.OUTFLOW,
@@ -1074,7 +1087,7 @@ def get_cash_reconciliation_report(
     year: int = Query(..., ge=1900, le=2100),
     month: int = Query(..., ge=1, le=12),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     base = db.query(models.Transaction).filter(
         models.Transaction.status == models.TransactionStatus.approved,
@@ -1194,7 +1207,7 @@ def get_due_reminders(
 @app.post("/api/reminders/due/generate")
 def generate_due_reminder_notifications(
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     """Create in-app notification reminders for all super admins about overdue residents."""
     now = datetime.now()
@@ -1259,7 +1272,7 @@ def send_whatsapp_message(
 def send_whatsapp_bulk(
     payload: dict,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_super_admin),
+    user: models.User = Depends(require_senior_or_super),
 ):
     entries = payload.get("entries", [])
     if not entries:

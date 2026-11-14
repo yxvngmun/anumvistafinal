@@ -21,7 +21,7 @@ const statusStyles: Record<string, string> = {
 export default function LedgerPage() {
   const { isAuthenticated, user } = useAuth();
   const router = useRouter();
-  const isSuperAdmin = user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin" || user?.role === "senior_admin";
 
   useEffect(() => {
     if (isAuthenticated && user && !isSuperAdmin) {
