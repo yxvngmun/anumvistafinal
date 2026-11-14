@@ -48,9 +48,10 @@ const fmtDate = (iso: string) =>
 
 export default function MonthlyAnalyticsPage() {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
+  const [year, setYear] = useState(Math.max(2026, now.getFullYear()));
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [mounted, setMounted] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -130,7 +131,7 @@ export default function MonthlyAnalyticsPage() {
             onChange={(e) => setYear(Number(e.target.value))}
             className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0d131f] px-3 py-1.5 text-xs text-slate-900 dark:text-white shadow-sm outline-none"
           >
-            {[now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2].map((y) => (
+            {Array.from({ length: Math.max(1, now.getFullYear() - 2025) }, (_, i) => 2026 + i).map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
@@ -148,6 +149,20 @@ export default function MonthlyAnalyticsPage() {
             className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-3.5 py-1.5 text-xs font-medium text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/[0.08] shadow-sm transition-colors press-feedback"
           >
             {isFetching ? "Syncing..." : "Refresh"}
+          </button>
+          <button
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await api.exportMonthlyReport(year, month);
+              } finally {
+                setExporting(false);
+              }
+            }}
+            disabled={exporting}
+            className="rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-3.5 py-1.5 text-xs font-semibold hover:opacity-90 disabled:opacity-60 shadow-sm transition-opacity press-feedback"
+          >
+            {exporting ? "Exporting..." : "Export Report"}
           </button>
         </div>
       </div>

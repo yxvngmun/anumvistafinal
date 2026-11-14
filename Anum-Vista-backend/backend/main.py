@@ -1,5 +1,7 @@
 import os
+import io
 from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -787,29 +789,31 @@ def get_monthly_report(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_senior_or_super),
 ):
-    # Transaction-based totals
+    # Transaction-based totals (approved only for financial accuracy)
     base = db.query(models.Transaction).filter(
         func.extract("year", models.Transaction.date) == year,
         func.extract("month", models.Transaction.date) == month,
     )
-    maintenance_received = base.filter(
+    approved_base = base.filter(models.Transaction.status == models.TransactionStatus.approved)
+
+    maintenance_received = approved_base.filter(
         models.Transaction.type == models.TransactionType.INFLOW,
         models.Transaction.category == models.TransactionCategory.maintenance,
     ).with_entities(func.coalesce(func.sum(models.Transaction.amount), 0)).scalar() or Decimal("0.00")
 
-    inflow_total = base.filter(models.Transaction.type == models.TransactionType.INFLOW).with_entities(
+    inflow_total = approved_base.filter(models.Transaction.type == models.TransactionType.INFLOW).with_entities(
         func.coalesce(func.sum(models.Transaction.amount), 0)
     ).scalar() or Decimal("0.00")
-    outflow_total = base.filter(models.Transaction.type == models.TransactionType.OUTFLOW).with_entities(
+    outflow_total = approved_base.filter(models.Transaction.type == models.TransactionType.OUTFLOW).with_entities(
         func.coalesce(func.sum(models.Transaction.amount), 0)
     ).scalar() or Decimal("0.00")
-    transfer_total = base.filter(models.Transaction.type == models.TransactionType.TRANSFER).with_entities(
+    transfer_total = approved_base.filter(models.Transaction.type == models.TransactionType.TRANSFER).with_entities(
         func.coalesce(func.sum(models.Transaction.amount), 0)
     ).scalar() or Decimal("0.00")
 
     inflow_by_category = {}
     for cat, total in (
-        base.filter(models.Transaction.type == models.TransactionType.INFLOW)
+        approved_base.filter(models.Transaction.type == models.TransactionType.INFLOW)
         .with_entities(models.Transaction.category, func.sum(models.Transaction.amount))
         .group_by(models.Transaction.category)
         .all()
@@ -818,15 +822,18 @@ def get_monthly_report(
 
     outflow_by_category = {}
     for cat, total in (
-        base.filter(models.Transaction.type == models.TransactionType.OUTFLOW)
+        approved_base.filter(models.Transaction.type == models.TransactionType.OUTFLOW)
         .with_entities(models.Transaction.category, func.sum(models.Transaction.amount))
         .group_by(models.Transaction.category)
         .all()
     ):
         outflow_by_category[str(cat.value if hasattr(cat, "value") else cat)] = total or Decimal("0.00")
 
-    # History-based treasury opening/closing if available (from funds_position_entries)
+    # History-based treasury opening/closing if available, otherwise compute from cumulative approved transactions
     period = date(year, month, 1)
+    period_start_dt = datetime(year, month, 1)
+    next_month_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+
     treasury_opening = (
         db.query(models.FundsPositionEntry.amount)
         .filter(
@@ -845,6 +852,25 @@ def get_monthly_report(
         )
         .scalar()
     )
+
+    if treasury_opening is None:
+        prior_agg = db.query(
+            func.coalesce(
+                func.sum(case((models.Transaction.type == models.TransactionType.INFLOW, models.Transaction.amount), else_=0)),
+                0,
+            ).label("inflows"),
+            func.coalesce(
+                func.sum(case((models.Transaction.type == models.TransactionType.OUTFLOW, models.Transaction.amount), else_=0)),
+                0,
+            ).label("outflows"),
+        ).filter(
+            models.Transaction.status == models.TransactionStatus.approved,
+            models.Transaction.date < period_start_dt,
+        ).one()
+        treasury_opening = Decimal(str(prior_agg.inflows or 0)) - Decimal(str(prior_agg.outflows or 0))
+
+    if treasury_closing is None:
+        treasury_closing = Decimal(str(treasury_opening)) + Decimal(str(inflow_total)) - Decimal(str(outflow_total))
 
     # Per-treasurer rollups for the month (approved only)
     inflow_by_treasurer: dict[str, Decimal] = {}
@@ -918,6 +944,35 @@ def get_monthly_report(
             .all()
         ):
             treasurer_split.append(schemas.TreasurerSplit(person=person, amount=amount))
+    else:
+        holders_order = ["Danish", "Ali", "Dilshad", "Asif", "Naveed"]
+        balances = {h: Decimal("0.00") for h in holders_order}
+        cum_txns = (
+            db.query(
+                models.Transaction.type,
+                models.Transaction.credited_to,
+                models.Transaction.transfer_from,
+                models.Transaction.amount,
+            )
+            .filter(
+                models.Transaction.status == models.TransactionStatus.approved,
+                models.Transaction.date < next_month_dt,
+            )
+            .all()
+        )
+        for ttype, cred, tfrom, amt in cum_txns:
+            a = Decimal(str(amt or 0))
+            if ttype == models.TransactionType.INFLOW and cred in balances:
+                balances[cred] += a
+            elif ttype == models.TransactionType.OUTFLOW and cred in balances:
+                balances[cred] -= a
+            elif ttype == models.TransactionType.TRANSFER:
+                if cred in balances:
+                    balances[cred] += a
+                if tfrom in balances:
+                    balances[tfrom] -= a
+        for h in holders_order:
+            treasurer_split.append(schemas.TreasurerSplit(person=h, amount=balances[h]))
 
     net_flow = inflow_total - outflow_total
 
@@ -940,6 +995,245 @@ def get_monthly_report(
     )
 
 
+@app.get("/api/reports/monthly/export")
+def export_monthly_report_excel(
+    year: int = Query(..., ge=2026, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_senior_or_super),
+):
+    """Export Monthly Summary Sheet / Funds Position in the exact uploaded Excel format."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    report = get_monthly_report(year=year, month=month, db=db, user=user)
+
+    approved_txns = (
+        db.query(models.Transaction)
+        .filter(
+            func.extract("year", models.Transaction.date) == year,
+            func.extract("month", models.Transaction.date) == month,
+            models.Transaction.status == models.TransactionStatus.approved,
+        )
+        .all()
+    )
+
+    inflow_lines = {
+        "Maintenance": Decimal("0.00"),
+        "Maintenance Shop A": Decimal("0.00"),
+        "Rent Community Hall": Decimal("0.00"),
+        "Advertisment": Decimal("0.00"),
+        "Advertisement Utility Bill Collection": Decimal("0.00"),
+        "Scrap Sale": Decimal("0.00"),
+    }
+
+    outflow_lines_order = [
+        "Water Tanker",
+        "Salaries + Security Gurads",
+        "Lift Work + Monthly Maintenance",
+        "Petty Cash Expenses",
+        "Utilities - Kelectric",
+        "Electrical Work Expenses",
+        "Generator & Diesel Exp",
+        "Building Colour",
+        "Building Maintenance - Others",
+        "Play Area Expense",
+        "Entertainment Expense",
+        "Water - Machine and Plumbering Work",
+        "Qurbani Expenses",
+        "Mosque/Ramzan Expenses",
+        "Gym Expense",
+        "Building Assets",
+        "Camera, Intercom and Internet Expenses",
+    ]
+    outflow_lines = {label: Decimal("0.00") for label in outflow_lines_order}
+    outflow_alias = {
+        "water tanker": "Water Tanker",
+        "salaries + security guards": "Salaries + Security Gurads",
+        "salaries + security gurads": "Salaries + Security Gurads",
+        "salaries": "Salaries + Security Gurads",
+        "lift work + monthly maintenance": "Lift Work + Monthly Maintenance",
+        "petty cash expenses": "Petty Cash Expenses",
+        "utilities - kelectric": "Utilities - Kelectric",
+        "electrical work expenses": "Electrical Work Expenses",
+        "generator & diesel exp": "Generator & Diesel Exp",
+        "building colour": "Building Colour",
+        "building maintenance - others": "Building Maintenance - Others",
+        "play area expense": "Play Area Expense",
+        "entertainment expense": "Entertainment Expense",
+        "water - machine and plumbering work": "Water - Machine and Plumbering Work",
+        "qurbani expenses": "Qurbani Expenses",
+        "mosque/ramzan expenses": "Mosque/Ramzan Expenses",
+        "gym expense": "Gym Expense",
+        "building assets": "Building Assets",
+        "camera, intercom and internet expenses": "Camera, Intercom and Internet Expenses",
+    }
+
+    for txn in approved_txns:
+        amt = Decimal(str(txn.amount or 0))
+        cat_val = txn.category.value if hasattr(txn.category, "value") else str(txn.category)
+        src_name = (txn.extra_source_name or "").lower()
+        notes = (txn.notes or "").lower()
+        exp_desc = (txn.expense_description or "").strip().lower()
+
+        if txn.type == models.TransactionType.INFLOW:
+            if "shop a" in notes or "shop a" in src_name:
+                inflow_lines["Maintenance Shop A"] += amt
+            elif "community hall" in src_name or "community hall" in notes:
+                inflow_lines["Rent Community Hall"] += amt
+            elif "utility bill" in src_name or "utility bill" in notes:
+                inflow_lines["Advertisement Utility Bill Collection"] += amt
+            elif "scrap" in src_name or "scrap" in notes:
+                inflow_lines["Scrap Sale"] += amt
+            elif cat_val == "ad_revenue" or "advert" in src_name or "advert" in notes:
+                inflow_lines["Advertisment"] += amt
+            elif cat_val == "maintenance":
+                inflow_lines["Maintenance"] += amt
+            else:
+                inflow_lines["Scrap Sale"] += amt
+        elif txn.type == models.TransactionType.OUTFLOW:
+            matched = outflow_alias.get(exp_desc)
+            if not matched:
+                for k, target in outflow_alias.items():
+                    if k in exp_desc or k in notes:
+                        matched = target
+                        break
+            outflow_lines[matched or "Building Maintenance - Others"] += amt
+
+    wb = Workbook()
+    ws = wb.active
+    month_name = date(year, month, 1).strftime("%B %Y")
+    ws.title = date(year, month, 1).strftime("%b %Y")
+
+    bold_title = Font(name="Calibri", size=14, bold=True)
+    bold_sub = Font(name="Calibri", size=12, bold=True)
+    bold_sec = Font(name="Calibri", size=11, bold=True)
+    bold_total = Font(name="Calibri", size=11, bold=True)
+    regular = Font(name="Calibri", size=11)
+    header_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    thin_side = Side(style="thin", color="CBD5E1")
+    top_bottom_border = Border(top=thin_side, bottom=thin_side)
+    num_fmt = "#,##0"
+
+    ws["A1"] = "Anum Vista"
+    ws["A1"].font = bold_title
+    ws["A2"] = f"Summary Sheet / Funds Position - {year}"
+    ws["A2"].font = bold_sub
+    ws["C2"] = month_name
+    ws["C2"].font = bold_sub
+    ws["C2"].alignment = Alignment(horizontal="right")
+
+    # Row 5: Opening Balance
+    ws["A5"] = "Cash in Hand - Opening Balance"
+    ws["A5"].font = bold_sec
+    ws["C5"] = float(report.treasury_opening or Decimal("0.00"))
+    ws["C5"].font = bold_sec
+    ws["C5"].number_format = num_fmt
+
+    # Row 6: Inflow
+    ws["A6"] = "Inflow"
+    ws["A6"].font = bold_sec
+    ws["A6"].fill = header_fill
+    ws["B6"].fill = header_fill
+    ws["C6"].fill = header_fill
+
+    row_idx = 7
+    inflow_start = row_idx
+    for label, val in inflow_lines.items():
+        ws[f"B{row_idx}"] = label
+        ws[f"B{row_idx}"].font = regular
+        ws[f"C{row_idx}"] = float(val)
+        ws[f"C{row_idx}"].font = regular
+        ws[f"C{row_idx}"].number_format = num_fmt
+        row_idx += 1
+    inflow_end = row_idx - 1
+
+    ws[f"B{row_idx}"] = "Total Inflow"
+    ws[f"B{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"] = f"=SUM(C{inflow_start}:C{inflow_end})"
+    ws[f"C{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"].number_format = num_fmt
+    ws[f"C{row_idx}"].border = top_bottom_border
+    total_inflow_row = row_idx
+    row_idx += 2
+
+    # Outflow
+    ws[f"A{row_idx}"] = "Outflow"
+    ws[f"A{row_idx}"].font = bold_sec
+    ws[f"A{row_idx}"].fill = header_fill
+    ws[f"B{row_idx}"].fill = header_fill
+    ws[f"C{row_idx}"].fill = header_fill
+    row_idx += 1
+
+    outflow_start = row_idx
+    for label in outflow_lines_order:
+        ws[f"B{row_idx}"] = label
+        ws[f"B{row_idx}"].font = regular
+        ws[f"C{row_idx}"] = float(outflow_lines[label])
+        ws[f"C{row_idx}"].font = regular
+        ws[f"C{row_idx}"].number_format = num_fmt
+        row_idx += 1
+    outflow_end = row_idx - 1
+
+    ws[f"B{row_idx}"] = "Total Outflow"
+    ws[f"B{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"] = f"=SUM(C{outflow_start}:C{outflow_end})"
+    ws[f"C{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"].number_format = num_fmt
+    ws[f"C{row_idx}"].border = top_bottom_border
+    total_outflow_row = row_idx
+    row_idx += 2
+
+    # Closing Balance
+    ws[f"A{row_idx}"] = "Cash in Hand - Closing Balance"
+    ws[f"A{row_idx}"].font = bold_sec
+    ws[f"C{row_idx}"] = f"=C5+C{total_inflow_row}-C{total_outflow_row}"
+    ws[f"C{row_idx}"].font = bold_sec
+    ws[f"C{row_idx}"].number_format = num_fmt
+    ws[f"C{row_idx}"].border = top_bottom_border
+    row_idx += 2
+
+    # Funds in Hand
+    ws[f"A{row_idx}"] = "Funds in Hand"
+    ws[f"A{row_idx}"].font = bold_sec
+    ws[f"A{row_idx}"].fill = header_fill
+    ws[f"B{row_idx}"].fill = header_fill
+    ws[f"C{row_idx}"].fill = header_fill
+    row_idx += 1
+
+    split_map = {s.person: Decimal(str(s.amount or 0)) for s in report.treasurer_split}
+    funds_start = row_idx
+    for holder in ["Danish", "Ali", "Dilshad", "Asif", "Naveed"]:
+        ws[f"B{row_idx}"] = holder
+        ws[f"B{row_idx}"].font = regular
+        ws[f"C{row_idx}"] = float(split_map.get(holder, Decimal("0.00")))
+        ws[f"C{row_idx}"].font = regular
+        ws[f"C{row_idx}"].number_format = num_fmt
+        row_idx += 1
+    funds_end = row_idx - 1
+
+    ws[f"B{row_idx}"] = "Total Funds in Hand"
+    ws[f"B{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"] = f"=SUM(C{funds_start}:C{funds_end})"
+    ws[f"C{row_idx}"].font = bold_total
+    ws[f"C{row_idx}"].number_format = num_fmt
+    ws[f"C{row_idx}"].border = top_bottom_border
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 40
+    ws.column_dimensions["C"].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"Anum_Vista_Summary_Funds_Position_{year}_{month:02d}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/treasury/current")
 def get_current_treasury_split(
     db: Session = Depends(get_db),
@@ -951,7 +1245,29 @@ def get_current_treasury_split(
     holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
     latest_period = db.query(func.max(models.FundsInHandEntry.period)).scalar()
     if latest_period is None:
-        return {"period": None, "holders": {h: "0.00" for h in holders}}
+        balances = {h: Decimal("0.00") for h in holders}
+        txns = (
+            db.query(
+                models.Transaction.type,
+                models.Transaction.credited_to,
+                models.Transaction.transfer_from,
+                models.Transaction.amount,
+            )
+            .filter(models.Transaction.status == models.TransactionStatus.approved)
+            .all()
+        )
+        for ttype, cred, tfrom, amt in txns:
+            a = Decimal(str(amt or 0))
+            if ttype == models.TransactionType.INFLOW and cred in balances:
+                balances[cred] += a
+            elif ttype == models.TransactionType.OUTFLOW and cred in balances:
+                balances[cred] -= a
+            elif ttype == models.TransactionType.TRANSFER:
+                if cred in balances:
+                    balances[cred] += a
+                if tfrom in balances:
+                    balances[tfrom] -= a
+        return {"period": None, "holders": {h: str(balances[h]) for h in holders}}
     rows = (
         db.query(models.FundsInHandEntry.person, models.FundsInHandEntry.amount)
         .filter(models.FundsInHandEntry.period == latest_period)

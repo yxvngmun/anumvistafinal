@@ -505,4 +505,24 @@ export const api = {
     if (typeof window === "undefined") return;
     fetch(buildUrl("/health"), { method: "GET", cache: "no-store" }).catch(() => {});
   },
+
+  exportMonthlyReport: async (year: number, month: number): Promise<void> => {
+    const token = getToken();
+    const res = await fetch(buildUrl(withQuery("/reports/monthly/export", { year, month })), {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`Export failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Anum_Vista_Summary_Funds_Position_${year}_${String(month).padStart(2, "0")}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
