@@ -107,6 +107,10 @@ EXCEL_EXTRA_CURRICULAR_ENTRIES = [
     ("EXCEL-EC-2026-SCRAP-06", "other_scrap_sale", "2026-06-18", "4000.00", "", "Jun 2026", None),
     ("EXCEL-EC-2026-ADUTIL-01", "other_ad_utility_bill", "2026-01-15", "50000.00", "", "Jan 2026", None),
     ("EXCEL-EC-2026-ADUTIL-05", "other_ad_utility_bill", "2026-05-01", "-50000.00", "Adjustment", "May 2026", None),
+    # --- Oct 2026 Dilshad Fund Sheet ---
+    ("EXCEL-EC-2026-OCT-ADV3-16", "advert_3", "2026-10-16", "200000.00", "Cheque", "Q4 2026", "Dilshad"),
+    ("EXCEL-EC-2026-OCT-ADV1-20", "advert_1", "2026-10-20", "500000.00", "Bank transfer", "Q4 2026", "Dilshad"),
+    ("EXCEL-EC-2026-OCT-ADV1-21", "advert_1", "2026-10-21", "250000.00", "Bank transfer", "Q4 2026", "Dilshad"),
     # --- Recpt 2025 (2023 - 2025) ---
     ("EXCEL-EC-2023-SHOPA-02", "other_shop_maint_a", "2023-02-12", "7500.00", "1323", "Feb 2023", None),
     ("EXCEL-EC-2023-SHOPA-04", "other_shop_maint_a", "2023-04-12", "15000.00", "1388", "Apr 2023", None),
@@ -172,6 +176,44 @@ EXCEL_EXTRA_CURRICULAR_ENTRIES = [
     ("EXCEL-EC-2025-SCRAP-12", "other_scrap_sale", "2025-12-02", "50000.00", "Rec. Dilshad", "Dec 2025", "Dilshad"),
 ]
 
+# Oct 2026 Expense Sheet (Total = 1,098,394 paid by Dilshad)
+OCT_2026_EXPENSES = [
+    ("EXCEL-EXP-2026-10-01", "2026-10-03", "40000.00", "Salaries", "Nadeem - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-02", "2026-10-03", "26000.00", "Salaries", "Adnan - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-03", "2026-10-03", "12500.00", "Salaries", "Ali - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-04", "2026-10-03", "28000.00", "Salaries", "Imam SB - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-05", "2026-10-03", "37000.00", "Salaries", "Albert - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-06", "2026-10-03", "11000.00", "Salaries", "Matloob Masi - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-07", "2026-10-03", "5000.00", "Salaries", "Kamil - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-08", "2026-10-03", "24000.00", "Salaries", "Danish - Salary Sep-26", None),
+    ("EXCEL-EXP-2026-10-09", "2026-10-03", "3000.00", "Cleaning & Garbage", "Out Side Garbage", None),
+    ("EXCEL-EXP-2026-10-10", "2026-10-05", "65000.00", "Security", "Murtaza Security (No. of guard 2) - Oct-26", None),
+    ("EXCEL-EXP-2026-10-11", "2026-10-03", "12000.00", "Lift Maintenance", "Lift Monthly charges - Sep-26", None),
+    ("EXCEL-EXP-2026-10-12", "2026-10-23", "7000.00", "Lift Maintenance", "Lift Door Supply and belt", None),
+    ("EXCEL-EXP-2026-10-13", "2026-10-13", "3480.00", "Utilities", "Drinking Water - Sep-26", None),
+    ("EXCEL-EXP-2026-10-14", "2026-10-21", "2500.00", "Intercom & CCTV", "Intercom Monthly charges - Sep-26", None),
+    ("EXCEL-EXP-2026-10-15", "2026-10-21", "10000.00", "Intercom & CCTV", "Camera Monthly charges - Sep-26", None),
+    ("EXCEL-EXP-2026-10-16", "2026-10-07", "7540.00", "Cleaning & Garbage", "Cleaning Material", None),
+    ("EXCEL-EXP-2026-10-17", "2026-10-24", "680.00", "Cleaning & Garbage", "Cleaning Material", None),
+    ("EXCEL-EXP-2026-10-18", "2026-10-03", "20000.00", "Building Maintenance", "Outdoor plant cultivation", "C/O Asif Bhai"),
+    ("EXCEL-EXP-2026-10-19", "2026-10-08", "960.00", "Plumbing & Water Motor", "Belt for water Motor", None),
+    ("EXCEL-EXP-2026-10-20", "2026-10-30", "20300.00", "Generator & Fuel", "Diesel and conveyance", None),
+    ("EXCEL-EXP-2026-10-21", "2026-10-30", "950.00", "Office & Misc", "Stationery / Photocopy / Lock / Key making", "Nadeem"),
+    ("EXCEL-EXP-2026-10-22", "2026-10-12", "13280.00", "Generator & Fuel", "Generator Charger installation", "C/O Shahid Bhai"),
+    ("EXCEL-EXP-2026-10-23", "2026-10-17", "18000.00", "Plumbing & Water Motor", "Motor Purchase for suction pump", None),
+    ("EXCEL-EXP-2026-10-24", "2026-10-17", "1100.00", "Plumbing & Water Motor", "Belt for water Motor", None),
+    ("EXCEL-EXP-2026-10-25", "2026-10-19", "23070.00", "Electrical & Gym", "Gym Lights purchase 18,070/- Labor 5,000/-", "C/O Salman Bhai"),
+    ("EXCEL-EXP-2026-10-26", "2026-10-19", "60000.00", "Building Maintenance", "Stairs Marble", "C/O Ali Bhai"),
+    ("EXCEL-EXP-2026-10-27", "2026-10-24", "2500.00", "Electrical & Gym", "Electric - AC Power Plug 1800/- Outside Cleaning 500 Battery Cell 200", "PC"),
+    ("EXCEL-EXP-2026-10-28", "2026-10-22", "114784.00", "Plumbing & Water Motor", "Water Motor - Material Purchase and labor 75,000 + 24,784 + 15,000", "Kashif Balance | Ref: 6784"),
+    ("EXCEL-EXP-2026-10-29", "2026-10-24", "19550.00", "Plumbing & Water Motor", "Water Motor Electrical Material and labour - 12,550 + 7000", None),
+    ("EXCEL-EXP-2026-10-30", "2026-10-24", "2400.00", "Office & Misc", "Breakfast of Staff for cleaning R.O. Plant", None),
+    ("EXCEL-EXP-2026-10-31", "2026-10-27", "2000.00", "Electrical & Gym", "Electric Box New 3 Lock and fixing charges", None),
+    ("EXCEL-EXP-2026-10-32", "2026-10-27", "4800.00", "Lift Maintenance", "Lift panel wire change", None),
+    ("EXCEL-EXP-2026-10-35", "2026-10-31", "250000.00", "Solar Project", "Solar Payment", None),
+    ("EXCEL-EXP-2026-10-36", "2026-10-31", "250000.00", "Solar Project", "Solar Payment", None),
+]
+
 
 def seed_extra_curriculars(db: Session) -> None:
     """Idempotently seed ExtraCurricularSource rows and historical Excel receipts."""
@@ -209,6 +251,11 @@ def seed_extra_curriculars(db: Session) -> None:
             notes_parts.append(period_lbl)
         if rcpt_note:
             notes_parts.append(f"Ref: {rcpt_note}")
+        mode = "cash"
+        if rcpt_note.lower() == "cheque":
+            mode = "cheque"
+        elif rcpt_note.lower() == "bank transfer":
+            mode = "bank_transfer"
         txn = models.Transaction(
             receipt_no=ref_key,
             date=datetime.strptime(dt_str, "%Y-%m-%d"),
@@ -218,7 +265,7 @@ def seed_extra_curriculars(db: Session) -> None:
             notes=" — ".join(notes_parts),
             generated_by=collector or "Excel Import",
             credited_to=collector,
-            payment_mode="cash",
+            payment_mode=mode,
             status=models.TransactionStatus.approved,
             created_at=datetime.utcnow(),
             approved_at=datetime.utcnow(),
@@ -230,9 +277,64 @@ def seed_extra_curriculars(db: Session) -> None:
         db.add(txn)
         inserted += 1
 
-    if inserted:
+    # Seed Oct 2026 Dilshad expenses (1,098,394) & reconcile Dilshad Oct/Nov FundsInHandEntry once
+    existing_exp_refs = {
+        r[0]
+        for r in db.query(models.Transaction.receipt_no)
+        .filter(models.Transaction.receipt_no.like("EXCEL-EXP-2026-10-%"))
+        .all()
+        if r[0]
+    }
+    exp_inserted = 0
+    for ref_key, dt_str, amt_str, exp_desc, particulars, bill_status in OCT_2026_EXPENSES:
+        if ref_key in existing_exp_refs:
+            continue
+        txn = models.Transaction(
+            receipt_no=ref_key,
+            date=datetime.strptime(dt_str, "%Y-%m-%d"),
+            amount=Decimal(amt_str),
+            type=models.TransactionType.OUTFLOW,
+            category=models.TransactionCategory.expense,
+            expense_description=exp_desc,
+            expense_details=bill_status,
+            notes=particulars,
+            generated_by="Dilshad",
+            credited_to="Dilshad",
+            payment_mode="cash",
+            status=models.TransactionStatus.approved,
+            created_at=datetime.utcnow(),
+            approved_at=datetime.utcnow(),
+        )
+        db.add(txn)
+        exp_inserted += 1
+
+    if exp_inserted > 0:
+        # Adjust Dilshad's Oct/Nov 2026 closing balance from 579,710 -> 431,316 (+950,000 - 1,098,394 = -148,394)
+        from datetime import date as date_cls
+        sep_entries = db.query(models.FundsInHandEntry).filter(
+            models.FundsInHandEntry.period == date_cls(2026, 9, 1)
+        ).all()
+        oct_period = date_cls(2026, 10, 1)
+        for e in sep_entries:
+            oct_e = db.query(models.FundsInHandEntry).filter(
+                models.FundsInHandEntry.period == oct_period,
+                models.FundsInHandEntry.person == e.person,
+            ).first()
+            target_amt = Decimal("431316.00") if e.person == "Dilshad" else e.amount
+            if oct_e:
+                oct_e.amount = target_amt
+            else:
+                db.add(models.FundsInHandEntry(period=oct_period, person=e.person, amount=target_amt))
+        nov_dilshad = db.query(models.FundsInHandEntry).filter(
+            models.FundsInHandEntry.period == date_cls(2026, 11, 1),
+            models.FundsInHandEntry.person == "Dilshad",
+        ).first()
+        if nov_dilshad:
+            nov_dilshad.amount = nov_dilshad.amount - Decimal("148394.00")
+
+    if inserted or exp_inserted:
         db.commit()
-        print(f"Seeded {inserted} historical Excel extra curricular transactions.")
+        print(f"Seeded {inserted} extra curricular txns and {exp_inserted} Oct 2026 expense txns.")
     else:
         db.commit()
 
@@ -399,6 +501,8 @@ def collect_extra_curricular(
 
     if src.source_type == "advert" and payload.credited_to != "Dilshad":
         raise HTTPException(status_code=400, detail="Advert receiving is handled only by Dilshad.")
+    if src.source_type == "community_hall" and payload.credited_to != "Naveed":
+        raise HTTPException(status_code=400, detail="Community Hall receiving is handled only by Naveed.")
 
     is_super = user.role == models.UserRole.super_admin
     category = (

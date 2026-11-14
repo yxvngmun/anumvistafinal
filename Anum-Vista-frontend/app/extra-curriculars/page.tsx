@@ -111,7 +111,8 @@ export default function ExtraCurricularsPage() {
     setCollectAmount("");
     setCollectDate(new Date().toISOString().split("T")[0]);
     const isAdv = src?.source_type === "advert";
-    setCreditedTo(isAdv ? "Dilshad" : (treasurers[0] || DEFAULT_TREASURERS[0]));
+    const isHall = src?.source_type === "community_hall";
+    setCreditedTo(isAdv ? "Dilshad" : isHall ? "Naveed" : (treasurers[0] || DEFAULT_TREASURERS[0]));
     setPaymentMode("cash");
     setNotes("");
     setCollectOpen(true);
@@ -126,6 +127,8 @@ export default function ExtraCurricularsPage() {
       setPeriodLabel(defaultPeriodForCycle(cycle, selectedYear || new Date().getFullYear()));
       if (match.source_type === "advert") {
         setCreditedTo("Dilshad");
+      } else if (match.source_type === "community_hall") {
+        setCreditedTo("Naveed");
       }
     } else if (code === "other") {
       setBillingCycle("one_time");
@@ -726,6 +729,13 @@ export default function ExtraCurricularsPage() {
                   <input
                     type="text"
                     value="Dilshad (Advert Receiver Only)"
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 cursor-not-allowed"
+                  />
+                ) : sources.find((s) => s.code === selectedSourceCode)?.source_type === "community_hall" ? (
+                  <input
+                    type="text"
+                    value="Naveed (Community Hall Receiver Only)"
                     readOnly
                     className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-700 dark:text-zinc-300 cursor-not-allowed"
                   />
