@@ -803,20 +803,23 @@ def get_dashboard_metrics(
     # Total apartments
     total_apartments = db.query(func.count(models.Unit.id)).scalar() or 0
 
-    # Advance payments: residents whose last_paid_month > current month
-    current_month_date = datetime(now.year, now.month, 1)
+    # Advance payments: residents whose last_paid_month >= current month (full months ahead + partial advance)
+    curr_idx = _month_index(now.year, now.month)
     advance_count_amount = Decimal("0.00")
     for occ in occupants:
-        if occ.last_paid_month and occ.last_paid_month > current_month_date:
-            # months ahead * monthly fee
-            paid_idx = _month_index(occ.last_paid_month.year, occ.last_paid_month.month)
-            curr_idx = _month_index(now.year, now.month)
-            months_ahead = paid_idx - curr_idx
-            if months_ahead > 0:
-                base = occ.monthly_maintenance_fee or Decimal("0.00")
-                extra_cars = max(0, int(occ.car_count or 1) - 1)
-                extra = occ.extra_car_maintenance_fee or Decimal("0.00")
-                advance_count_amount += (base + extra * extra_cars) * months_ahead
+        if not occ.last_paid_month:
+            continue
+        paid_idx = _month_index(occ.last_paid_month.year, occ.last_paid_month.month)
+        if paid_idx < curr_idx:
+            continue
+        months_ahead = max(0, paid_idx - curr_idx)
+        partial_adv = Decimal(str(occ.partial_paid_amount or 0))
+        if months_ahead > 0 or partial_adv > 0:
+            base = occ.monthly_maintenance_fee or Decimal("0.00")
+            extra_cars = max(0, int(occ.car_count or 1) - 1)
+            extra = occ.extra_car_maintenance_fee or Decimal("0.00")
+            monthly_fee = base + extra * extra_cars
+            advance_count_amount += (monthly_fee * months_ahead) + partial_adv
 
     return schemas.DashboardMetrics(
         total_revenue=total_rev,
@@ -1503,26 +1506,37 @@ def get_advance_payments_report(
     user: models.User = Depends(require_permission("reports_ledger")),
 ):
     now = datetime.now()
-    current_month_date = datetime(now.year, now.month, 1)
+    curr_idx = _month_index(now.year, now.month)
     occupants = db.query(models.Occupant).options(joinedload(models.Occupant.unit)).all()
     entries = []
 
     for occ in occupants:
-        if not occ.last_paid_month or occ.last_paid_month <= current_month_date:
+        if not occ.last_paid_month:
             continue
         paid_idx = _month_index(occ.last_paid_month.year, occ.last_paid_month.month)
-        curr_idx = _month_index(now.year, now.month)
-        months_ahead = paid_idx - curr_idx
-        if months_ahead > 0:
+        if paid_idx < curr_idx:
+            continue
+        months_ahead = max(0, paid_idx - curr_idx)
+        partial_adv = Decimal(str(occ.partial_paid_amount or 0))
+        if months_ahead > 0 or partial_adv > 0:
+            base = occ.monthly_maintenance_fee or Decimal("0.00")
+            extra_cars = max(0, int(occ.car_count or 1) - 1)
+            extra = occ.extra_car_maintenance_fee or Decimal("0.00")
+            monthly_fee = base + extra * extra_cars
+            total_adv = (monthly_fee * months_ahead) + partial_adv
+            next_rem = max(Decimal("0.00"), monthly_fee - partial_adv) if partial_adv > 0 else Decimal("0.00")
             entries.append(schemas.AdvancePaymentEntry(
                 occupant_id=occ.id,
                 name=occ.name,
                 unit_no=occ.unit.unit_no if occ.unit else "",
                 paid_through=f"{occ.last_paid_month.year}-{occ.last_paid_month.month:02d}",
                 months_ahead=months_ahead,
+                partial_advance_amount=partial_adv,
+                total_advance_amount=total_adv,
+                next_month_remaining=next_rem,
             ))
 
-    entries.sort(key=lambda e: e.months_ahead, reverse=True)
+    entries.sort(key=lambda e: (e.total_advance_amount, e.months_ahead), reverse=True)
     return schemas.AdvancePaymentReport(
         as_of=now.strftime("%Y-%m-%d"),
         entries=entries,

@@ -276,6 +276,9 @@ export interface AdvancePaymentEntry {
   unit_no: string;
   paid_through: string;
   months_ahead: number;
+  partial_advance_amount?: string;
+  total_advance_amount?: string;
+  next_month_remaining?: string;
 }
 
 export interface AdvancePaymentReport {

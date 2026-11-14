@@ -75,7 +75,10 @@ export default function AdvancePaymentsPage() {
             <tr className="border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-zinc-400 uppercase text-[10px] bg-slate-50 dark:bg-white/[0.01]">
               <th className="py-3 px-4">Flat #</th>
               <th className="py-3 px-4">Resident</th>
-              <th className="py-3 px-4 text-center">Months Ahead</th>
+              <th className="py-3 px-4 text-center">Full Months</th>
+              <th className="py-3 px-4 text-right">Partial Credit</th>
+              <th className="py-3 px-4 text-right">Next Mo. Balance</th>
+              <th className="py-3 px-4 text-right">Total Advance</th>
               <th className="py-3 px-4">Paid Through</th>
             </tr>
           </thead>
@@ -83,15 +86,19 @@ export default function AdvancePaymentsPage() {
             {isLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  <td colSpan={4} className="py-4 px-4"><div className="h-5 bg-slate-100 dark:bg-white/[0.03] rounded" /></td>
+                  <td colSpan={7} className="py-4 px-4"><div className="h-5 bg-slate-100 dark:bg-white/[0.03] rounded" /></td>
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-6 text-center text-slate-400 dark:text-zinc-400">No advance payment records</td>
+                <td colSpan={7} className="py-6 text-center text-slate-400 dark:text-zinc-400">No advance payment records</td>
               </tr>
             ) : (
-              filtered.map((e, idx) => (
+              filtered.map((e, idx) => {
+                const partial = Number(e.partial_advance_amount ?? 0);
+                const nextRem = Number(e.next_month_remaining ?? 0);
+                const totalAdv = Number(e.total_advance_amount ?? 0);
+                return (
                 <tr key={`${e.unit_no}-${idx}`} className="hover:bg-slate-50/80 dark:hover:bg-white/[0.02] transition-colors">
                   <td className="py-3.5 px-4 font-mono font-semibold text-slate-900 dark:text-white">{e.unit_no}</td>
                   <td className="py-3.5 px-4 font-medium text-slate-900 dark:text-zinc-100">{e.name}</td>
@@ -100,11 +107,21 @@ export default function AdvancePaymentsPage() {
                       +{e.months_ahead} mo
                     </span>
                   </td>
+                  <td className="py-3.5 px-4 text-right font-mono text-amber-600 dark:text-amber-400">
+                    {partial > 0 ? `₨ ${partial.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—"}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono text-slate-600 dark:text-zinc-300">
+                    {nextRem > 0 ? `₨ ${nextRem.toLocaleString("en-PK", { maximumFractionDigits: 0 })}` : "—"}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                    ₨ {totalAdv.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+                  </td>
                   <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-zinc-300">
                     {e.paid_through}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

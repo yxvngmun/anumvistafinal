@@ -367,6 +367,9 @@ class AdvancePaymentEntry(BaseModel):
     unit_no: str
     paid_through: str
     months_ahead: int
+    partial_advance_amount: Decimal = Decimal("0.00")
+    total_advance_amount: Decimal = Decimal("0.00")
+    next_month_remaining: Decimal = Decimal("0.00")
 
 
 class AdvancePaymentReport(BaseModel):

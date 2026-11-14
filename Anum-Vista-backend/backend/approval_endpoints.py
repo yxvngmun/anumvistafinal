@@ -891,18 +891,29 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
                 cursor_m = 1
                 cursor_y += 1
 
-    if not months_covered:
-        raise HTTPException(status_code=400, detail=f"Amount ₨{payload.amount} is less than one month's fee ₨{monthly_fee}")
-
-    # Create the transaction using the same logic as create_receipt_v2
-    month_keys = [mc.month_key for mc in months_covered]
-    month_labels = ", ".join(month_keys)
-    selected_dates = [date(int(k.split("-")[0]), int(k.split("-")[1]), 1) for k in month_keys]
-    latest_month = selected_dates[-1]
+    unit_label = occupant.unit.unit_no if occupant.unit else str(occupant.unit_id or "")
+    if months_covered:
+        month_keys = [mc.month_key for mc in months_covered]
+        month_labels = ", ".join(month_keys)
+        selected_dates = [date(int(k.split("-")[0]), int(k.split("-")[1]), 1) for k in month_keys]
+        latest_month = selected_dates[-1]
+        note_text = f"Auto-allocated maintenance for {month_labels} ({unit_label})"
+    else:
+        if unpaid:
+            partial_target = date(unpaid[0].year, unpaid[0].month, 1)
+        elif occupant.last_paid_month:
+            partial_target = _next_month(date(occupant.last_paid_month.year, occupant.last_paid_month.month, 1))
+        else:
+            now_dt = datetime.now()
+            partial_target = date(now_dt.year, now_dt.month, 1)
+        month_keys = [f"{partial_target.year}-{partial_target.month:02d} (partial)"]
+        month_labels = ", ".join(month_keys)
+        selected_dates = [partial_target]
+        latest_month = partial_target
+        note_text = f"Partial advance maintenance toward {partial_target.year}-{partial_target.month:02d} ({unit_label})"
     total_applied = payload.amount
 
     receipt_no = f"RCPT-{selected_dates[0].year}{selected_dates[0].month:02d}-{payload.occupant_id}-{int(datetime.utcnow().timestamp())}"
-    unit_label = occupant.unit.unit_no if occupant.unit else str(occupant.unit_id or "")
 
     is_super = user.role == models.UserRole.super_admin
     db_txn = models.Transaction(
@@ -912,7 +923,7 @@ def auto_allocate_payment(payload: schemas.AutoAllocateRequest, db: Session = De
         amount=total_applied,
         type=models.TransactionType.INFLOW,
         category=models.TransactionCategory.maintenance,
-        notes=f"Auto-allocated maintenance for {month_labels} ({unit_label})",
+        notes=note_text,
         generated_by=payload.generated_by or user.username,
         created_at=datetime.utcnow(),
         status=models.TransactionStatus.approved if is_super else models.TransactionStatus.pending,
