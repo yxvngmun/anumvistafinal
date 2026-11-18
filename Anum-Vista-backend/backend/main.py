@@ -216,11 +216,14 @@ _ensure_all_model_columns()
 try:
     try:
         from backend.database import SessionLocal
+        from backend.baseline_2026 import seed_2026_baseline
     except ImportError:
         from database import SessionLocal
+        from baseline_2026 import seed_2026_baseline
     _db = SessionLocal()
     _seed_users(_db)
     seed_extra_curriculars(_db)
+    seed_2026_baseline(_db)
     _db.close()
 except Exception as exc:
     print(f"Failed to seed default users/extra curriculars: {exc}")
