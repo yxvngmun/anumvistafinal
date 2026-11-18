@@ -780,11 +780,11 @@ def get_dashboard_metrics(
     ad_rev = Decimal(str(txn_agg.ad_rev or 0))
     pending_count = int(txn_agg.pending_count or 0)
 
-    # Treasury Balance: sum of latest FundsInHandEntry across active treasurers (matches /api/treasury/current)
+    # Treasury Balance: latest FundsInHandEntry snapshot + any approved transactions after that snapshot's month
     holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
     latest_period = db.query(func.max(models.FundsInHandEntry.period)).scalar()
     if latest_period is not None:
-        treasury_balance = (
+        snapshot_balance = (
             db.query(func.sum(models.FundsInHandEntry.amount))
             .filter(
                 models.FundsInHandEntry.period == latest_period,
@@ -793,6 +793,25 @@ def get_dashboard_metrics(
             .scalar()
             or Decimal("0.00")
         )
+        cutoff_dt = (
+            datetime(latest_period.year + 1, 1, 1)
+            if latest_period.month == 12
+            else datetime(latest_period.year, latest_period.month + 1, 1)
+        )
+        post_agg = db.query(
+            func.coalesce(
+                func.sum(case((models.Transaction.type == models.TransactionType.INFLOW, models.Transaction.amount), else_=0)),
+                0,
+            ).label("inflows"),
+            func.coalesce(
+                func.sum(case((models.Transaction.type == models.TransactionType.OUTFLOW, models.Transaction.amount), else_=0)),
+                0,
+            ).label("outflows"),
+        ).filter(
+            models.Transaction.status == models.TransactionStatus.approved,
+            models.Transaction.date >= cutoff_dt,
+        ).one()
+        treasury_balance = Decimal(str(snapshot_balance)) + Decimal(str(post_agg.inflows or 0)) - Decimal(str(post_agg.outflows or 0))
     else:
         treasury_balance = Decimal(str(txn_agg.all_inflows or 0)) - Decimal(str(txn_agg.all_outflows or 0))
 
@@ -904,20 +923,53 @@ def get_monthly_report(
     )
 
     if treasury_opening is None:
-        prior_agg = db.query(
-            func.coalesce(
-                func.sum(case((models.Transaction.type == models.TransactionType.INFLOW, models.Transaction.amount), else_=0)),
-                0,
-            ).label("inflows"),
-            func.coalesce(
-                func.sum(case((models.Transaction.type == models.TransactionType.OUTFLOW, models.Transaction.amount), else_=0)),
-                0,
-            ).label("outflows"),
-        ).filter(
-            models.Transaction.status == models.TransactionStatus.approved,
-            models.Transaction.date < period_start_dt,
-        ).one()
-        treasury_opening = Decimal(str(prior_agg.inflows or 0)) - Decimal(str(prior_agg.outflows or 0))
+        prior_snap = (
+            db.query(models.FundsPositionEntry.period, models.FundsPositionEntry.amount)
+            .filter(
+                models.FundsPositionEntry.period < period,
+                models.FundsPositionEntry.section == "closing_balance",
+                models.FundsPositionEntry.label == "Cash in Hand - Closing Balance",
+            )
+            .order_by(models.FundsPositionEntry.period.desc())
+            .first()
+        )
+        if prior_snap is not None:
+            snap_period, snap_amt = prior_snap
+            snap_cutoff_dt = (
+                datetime(snap_period.year + 1, 1, 1)
+                if snap_period.month == 12
+                else datetime(snap_period.year, snap_period.month + 1, 1)
+            )
+            delta_agg = db.query(
+                func.coalesce(
+                    func.sum(case((models.Transaction.type == models.TransactionType.INFLOW, models.Transaction.amount), else_=0)),
+                    0,
+                ).label("inflows"),
+                func.coalesce(
+                    func.sum(case((models.Transaction.type == models.TransactionType.OUTFLOW, models.Transaction.amount), else_=0)),
+                    0,
+                ).label("outflows"),
+            ).filter(
+                models.Transaction.status == models.TransactionStatus.approved,
+                models.Transaction.date >= snap_cutoff_dt,
+                models.Transaction.date < period_start_dt,
+            ).one()
+            treasury_opening = Decimal(str(snap_amt or 0)) + Decimal(str(delta_agg.inflows or 0)) - Decimal(str(delta_agg.outflows or 0))
+        else:
+            prior_agg = db.query(
+                func.coalesce(
+                    func.sum(case((models.Transaction.type == models.TransactionType.INFLOW, models.Transaction.amount), else_=0)),
+                    0,
+                ).label("inflows"),
+                func.coalesce(
+                    func.sum(case((models.Transaction.type == models.TransactionType.OUTFLOW, models.Transaction.amount), else_=0)),
+                    0,
+                ).label("outflows"),
+            ).filter(
+                models.Transaction.status == models.TransactionStatus.approved,
+                models.Transaction.date < period_start_dt,
+            ).one()
+            treasury_opening = Decimal(str(prior_agg.inflows or 0)) - Decimal(str(prior_agg.outflows or 0))
 
     if treasury_closing is None:
         treasury_closing = Decimal(str(treasury_opening)) + Decimal(str(inflow_total)) - Decimal(str(outflow_total))
@@ -987,16 +1039,25 @@ def get_monthly_report(
         .scalar()
     )
     treasurer_split: list[schemas.TreasurerSplit] = []
+    holders_order = ["Danish", "Ali", "Dilshad", "Asif", "Naveed"]
+    balances = {h: Decimal("0.00") for h in holders_order}
     if split_period:
         for person, amount in (
             db.query(models.FundsInHandEntry.person, models.FundsInHandEntry.amount)
             .filter(models.FundsInHandEntry.period == split_period)
             .all()
         ):
-            treasurer_split.append(schemas.TreasurerSplit(person=person, amount=amount))
+            if person in balances:
+                balances[person] = Decimal(str(amount or 0))
+        txns_start_dt = (
+            datetime(split_period.year + 1, 1, 1)
+            if split_period.month == 12
+            else datetime(split_period.year, split_period.month + 1, 1)
+        )
     else:
-        holders_order = ["Danish", "Ali", "Dilshad", "Asif", "Naveed"]
-        balances = {h: Decimal("0.00") for h in holders_order}
+        txns_start_dt = datetime(1900, 1, 1)
+
+    if not split_period or split_period < period_date:
         cum_txns = (
             db.query(
                 models.Transaction.type,
@@ -1006,6 +1067,7 @@ def get_monthly_report(
             )
             .filter(
                 models.Transaction.status == models.TransactionStatus.approved,
+                models.Transaction.date >= txns_start_dt,
                 models.Transaction.date < next_month_dt,
             )
             .all()
@@ -1021,8 +1083,8 @@ def get_monthly_report(
                     balances[cred] += a
                 if tfrom in balances:
                     balances[tfrom] -= a
-        for h in holders_order:
-            treasurer_split.append(schemas.TreasurerSplit(person=h, amount=balances[h]))
+    for h in holders_order:
+        treasurer_split.append(schemas.TreasurerSplit(person=h, amount=balances[h]))
 
     net_flow = inflow_total - outflow_total
 
@@ -1294,8 +1356,35 @@ def get_current_treasury_split(
     """
     holders = ["Naveed", "Asif", "Dilshad", "Ali", "Danish"]
     latest_period = db.query(func.max(models.FundsInHandEntry.period)).scalar()
-    if latest_period is None:
-        balances = {h: Decimal("0.00") for h in holders}
+    by_holder = {h: Decimal("0.00") for h in holders}
+    if latest_period is not None:
+        rows = (
+            db.query(models.FundsInHandEntry.person, models.FundsInHandEntry.amount)
+            .filter(models.FundsInHandEntry.period == latest_period)
+            .filter(models.FundsInHandEntry.person.in_(holders))
+            .all()
+        )
+        for person, amount in rows:
+            by_holder[person] = Decimal(str(amount or 0))
+        cutoff_dt = (
+            datetime(latest_period.year + 1, 1, 1)
+            if latest_period.month == 12
+            else datetime(latest_period.year, latest_period.month + 1, 1)
+        )
+        txns = (
+            db.query(
+                models.Transaction.type,
+                models.Transaction.credited_to,
+                models.Transaction.transfer_from,
+                models.Transaction.amount,
+            )
+            .filter(
+                models.Transaction.status == models.TransactionStatus.approved,
+                models.Transaction.date >= cutoff_dt,
+            )
+            .all()
+        )
+    else:
         txns = (
             db.query(
                 models.Transaction.type,
@@ -1306,27 +1395,17 @@ def get_current_treasury_split(
             .filter(models.Transaction.status == models.TransactionStatus.approved)
             .all()
         )
-        for ttype, cred, tfrom, amt in txns:
-            a = Decimal(str(amt or 0))
-            if ttype == models.TransactionType.INFLOW and cred in balances:
-                balances[cred] += a
-            elif ttype == models.TransactionType.OUTFLOW and cred in balances:
-                balances[cred] -= a
-            elif ttype == models.TransactionType.TRANSFER:
-                if cred in balances:
-                    balances[cred] += a
-                if tfrom in balances:
-                    balances[tfrom] -= a
-        return {"period": None, "holders": {h: str(balances[h]) for h in holders}}
-    rows = (
-        db.query(models.FundsInHandEntry.person, models.FundsInHandEntry.amount)
-        .filter(models.FundsInHandEntry.period == latest_period)
-        .filter(models.FundsInHandEntry.person.in_(holders))
-        .all()
-    )
-    by_holder = {h: Decimal("0.00") for h in holders}
-    for person, amount in rows:
-        by_holder[person] = amount
+    for ttype, cred, tfrom, amt in txns:
+        a = Decimal(str(amt or 0))
+        if ttype == models.TransactionType.INFLOW and cred in by_holder:
+            by_holder[cred] += a
+        elif ttype == models.TransactionType.OUTFLOW and cred in by_holder:
+            by_holder[cred] -= a
+        elif ttype == models.TransactionType.TRANSFER:
+            if cred in by_holder:
+                by_holder[cred] += a
+            if tfrom in by_holder:
+                by_holder[tfrom] -= a
     return {
         "period": latest_period,
         "holders": {person: str(amount) for person, amount in by_holder.items()},
